@@ -1,0 +1,21 @@
+{
+  "name": "claude-window",
+  "version": "0.4.0",
+  "description": "Pin your Claude Code 5-hour rate-limit window to a fixed hour",
+  "license": "MIT",
+  "author": "axelhamil",
+  "repository": { "type": "git", "url": "git+https://github.com/axelhamil/claude-window.git" },
+  "keywords": ["claude", "claude-code", "anthropic", "rate-limit", "cli"],
+  "type": "module",
+  "bin": { "claude-window": "dist/cli.js" },
+  "files": ["dist"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "bun build src/cli.ts --target=node --outfile dist/cli.js --minify",
+    "dev": "bun run src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "dependencies": { "zod": "^3.23.8" },
+  "devDependencies": { "@types/node": "^22.10.2", "typescript": "^5.7.2" }
+}

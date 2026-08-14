@@ -1,14 +1,14 @@
 # claude-window
 
-Pin your Claude Code 5-hour rate-limit window to the clock, so your reset always lands when you actually need it.
+Pin your Claude Code 5-hour rate-limit window to a fixed hour, so your reset always lands when you actually need it.
 
 ## The problem
 
 Claude Code's usage limit runs on a rolling 5-hour window. That window does **not** start at a fixed hour — it starts on your *first message after the previous window expired*.
 
-Start work at 15:34 and your windows are 15:30–20:30, then 20:30–01:30. Start at 09:12 the next day and everything shifts. Your reset time drifts a little more every day, and it always seems to cut out mid-session.
+Start work at 15:34 and your windows are 15:30–20:30, then 20:30–01:30. Start at 09:12 the next day and everything shifts. Your reset drifts a little more every day, and it always seems to cut out mid-session.
 
-Worse: because a long session only ever *chains* windows, a 9-hour evening covers **two** windows. If a window had already been open before you sat down, the same 9 hours would span **three**.
+Worse: a long session only ever *chains* windows, so a 9-hour evening covers **two**. If a window had already been open before you sat down, the same 9 hours would span **three**.
 
 ```
 You code 15:30 -> 00:30, nothing anchored:
@@ -27,7 +27,7 @@ Same session, anchored at 07:00:
 
 ## What everyone else does
 
-Fire a cron job at 6am that runs `claude -p "hi"`. That opens *one* window and then stops helping — the moment that window expires while you are away from the keyboard, the chain breaks and the next one starts whenever you happen to type. The grid drifts again.
+Fire a cron job at 6am that runs `claude -p "hi"`. That opens *one* window and then stops helping — the moment it expires while you are away from the keyboard, the chain breaks and the next window starts whenever you happen to type. The grid drifts again.
 
 ## What this does differently
 
@@ -36,69 +36,58 @@ Claude's API returns your exact rate-limit state in the response headers:
 ```
 anthropic-ratelimit-unified-5h-reset: 1786732200
 anthropic-ratelimit-unified-5h-utilization: 0.36
-anthropic-ratelimit-unified-7d-reset: 1787302800
 anthropic-ratelimit-unified-7d-utilization: 0.04
 ```
 
-So `claude-window` runs one tiny request, reads the real reset timestamp, sleeps until exactly that moment plus a small offset, and repeats. Every window opens the instant the previous one closes — the chain never breaks, and the whole grid stays pinned to your anchor hour.
+So `claude-window` sends one 1-token request, reads the real reset timestamp, sleeps until exactly that moment plus a small offset, and repeats. Every window opens the instant the previous one closes — the chain never breaks, and the grid stays pinned to your anchor hour.
 
-Between pings it is a sleeping bash process. No polling, no cron spam: **4 wakeups a day, ~6 MB RSS**. It runs happily on a Raspberry Pi Zero 2 W next to Pi-hole.
+Between probes it is a sleeping process. No polling, no cron: **4 wakeups a day**.
 
 ## Install
 
-Needs `bash`, `curl`, and a systemd host that stays on 24/7.
+Needs Node 20+ or Bun, on a machine that stays on.
 
 ```bash
-git clone https://github.com/axelhamil/claude-window
-cd claude-window
-./install.sh
+npm install -g claude-window
+claude-window login "$(claude setup-token)"
+claude-window install
 ```
 
-Then generate a long-lived token **on your workstation** (this is the same command CI setups use):
+`install` registers a background service using whatever your OS provides:
 
-```bash
-claude setup-token
-```
+| Platform | Mechanism | Registered as |
+|---|---|---|
+| Linux | systemd user unit + linger | `~/.config/systemd/user/claude-window.service` |
+| macOS | launchd LaunchAgent | `~/Library/LaunchAgents/com.axelhamil.claude-window.plist` |
+| Windows | Task Scheduler, logon trigger | task `claude-window` |
 
-and drop it on the host running the daemon:
-
-```bash
-printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' 'sk-ant-oat01-...' > ~/.config/claude-window/env
-chmod 600 ~/.config/claude-window/env
-sudo systemctl restart claude-window
-```
-
-> Paste the token carefully. If your terminal wraps it across two lines or slips in a space, you get a silent `401`.
+All three restart the daemon if it dies and start it at boot or logon.
 
 ## Usage
 
 ```bash
-claude-window status                       # last known window state, costs nothing
-claude-window update                       # pull, reinstall, restart
-claude-window version
-sudo journalctl -u claude-window -f -o cat # live
+claude-window status      # service state + last known window, costs nothing
+claude-window once        # probe now and exit
+claude-window daemon      # run in the foreground
+claude-window uninstall
 ```
 
-`update` pulls the clone `install.sh` was run from, reinstalls the binary, rewrites the
-unit only if it actually changed, and restarts the service. If the original clone is
-gone it re-clones into `~/.local/share/claude-window/src` and carries on. Run it on
-every machine where this is installed — nothing auto-updates behind your back.
-
 ```
-16:09:48 ancre ok http=200 fenetre 15:30->20:30 util5=0.36 util7=0.04
-16:09:48 dodo 15732s -> 20:32
+service (systemd): active
+window -> reset 20:30 (in 236 min)
+usage 5h 0.79 | 7d 0.08
 ```
 
 ## Configuration
 
-Set these in `~/.config/claude-window/env`, then `systemctl restart claude-window`.
+Environment variables, read at daemon start:
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `CLAUDE_WINDOW_START` | `7` | Hour the daily anchor fires |
 | `CLAUDE_WINDOW_END` | `23` | Stop re-anchoring after this hour |
-| `CLAUDE_WINDOW_OFFSET` | `120` | Seconds to wait past a reset before pinging |
-| `CLAUDE_WINDOW_MODEL` | `claude-haiku-4-5-20251001` | Model used for the 1-token ping |
+| `CLAUDE_WINDOW_OFFSET` | `120` | Seconds to wait past a reset before probing |
+| `CLAUDE_WINDOW_MODEL` | `claude-haiku-4-5-20251001` | Model used for the probe |
 
 Pick `CLAUDE_WINDOW_START` by counting back from the reset you want, in 5-hour steps. Want a fresh window at 22:00? Anchor at **07:00** (07 → 12 → 17 → 22).
 
@@ -106,12 +95,15 @@ Pick `CLAUDE_WINDOW_START` by counting back from the reset you want, in 5-hour s
 
 - **It cannot move a window that is already open.** If you are typing at 06:55, the 07:00 anchor lands inside a live window and does nothing. The grid only holds if you are idle at your anchor hour.
 - **Late nights break the chain.** The daemon stops at `CLAUDE_WINDOW_END`, so a 22:00–03:00 window expires unattended. Code at 03:15 and you open 03:00–08:00, shifting the grid by an hour. 24 is not divisible by 5, so no schedule loops cleanly across a day.
-- **The headers are not a documented public API.** They are what the client already receives on every call. They could change without notice.
+- **The headers are not a documented public API.** They are what the client already receives on every call, and they could change without notice.
 - **This does not create quota.** It moves window boundaries so fewer of them land mid-session. It does nothing for the weekly cap.
+- **Only the Linux path is verified in the wild.** The launchd and Task Scheduler backends are written to spec but untested — issues and reports welcome.
 
 ## Security
 
-The token grants full access to your Claude account. It lives in a `chmod 600` file read by systemd's `EnvironmentFile`, and never leaves your machine — which is the whole reason this exists instead of a GitHub Actions cron holding your credentials. Revoke with `claude setup-token` again if it leaks.
+The token grants full access to your Claude account. `login` writes it to your config directory with `0600`, and it never leaves your machine — which is the whole point of running this yourself instead of handing credentials to a CI cron. Rotate it with `claude setup-token` if it leaks.
+
+Config lives in `~/.config/claude-window` (Linux), `~/Library/Application Support/claude-window` (macOS), `%APPDATA%\claude-window` (Windows).
 
 ## License
 
