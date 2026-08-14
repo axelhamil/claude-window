@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Config } from "../src/config.js";
-import { clock, nextStartOfDay, withinActiveHours } from "../src/daemon.js";
+import { clock, nextStartOfDay, secondsUntilNextProbe, withinActiveHours } from "../src/daemon.js";
 
 const config: Config = {
   startHour: 7,
@@ -58,5 +58,34 @@ describe("nextStartOfDay", () => {
   it("rolls over when called exactly on the anchor", () => {
     const target = new Date(nextStartOfDay(7, at(7)) * 1000);
     expect(target.getDate()).toBe(15);
+  });
+});
+
+describe("secondsUntilNextProbe", () => {
+  const window = { resetAt: 1786732200, usage5h: 0.3, usage7d: 0.05 };
+
+  it("waits until the reset plus the configured offset", () => {
+    const now = (window.resetAt - 3600) * 1000;
+    expect(secondsUntilNextProbe(window, config, now)).toBe(3600 + config.offsetSeconds);
+  });
+
+  it("never returns less than a minute when the reset is already past", () => {
+    const now = (window.resetAt + 7200) * 1000;
+    expect(secondsUntilNextProbe(window, config, now)).toBe(60);
+  });
+
+  it("never returns a negative delay on a skewed clock", () => {
+    const now = (window.resetAt + 86400) * 1000;
+    expect(secondsUntilNextProbe(window, config, now)).toBeGreaterThan(0);
+  });
+
+  it("returns the real remaining delay while it stays above the floor", () => {
+    const now = (window.resetAt + 30) * 1000;
+    expect(secondsUntilNextProbe(window, config, now)).toBe(90);
+  });
+
+  it("clamps once less than a minute remains", () => {
+    const now = (window.resetAt + 90) * 1000;
+    expect(secondsUntilNextProbe(window, config, now)).toBe(60);
   });
 });

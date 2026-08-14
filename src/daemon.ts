@@ -3,6 +3,7 @@ import { saveSnapshot } from "./state.js";
 import { fetchWindow, type RateLimitWindow, windowStart } from "./window.js";
 
 const RETRY_SECONDS = 300;
+const MIN_SLEEP_SECONDS = 60;
 
 export function clock(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleTimeString([], {
@@ -42,6 +43,15 @@ export function withinActiveHours(config: Config, now = new Date()): boolean {
   return hour >= config.startHour && hour < config.endHour;
 }
 
+export function secondsUntilNextProbe(
+  window: RateLimitWindow,
+  config: Config,
+  now = Date.now(),
+): number {
+  const wakeAt = window.resetAt + config.offsetSeconds;
+  return Math.max(wakeAt - Math.floor(now / 1000), MIN_SLEEP_SECONDS);
+}
+
 export async function anchor(token: string, config: Config): Promise<RateLimitWindow> {
   const window = await fetchWindow(token, config.model);
   saveSnapshot(window);
@@ -63,9 +73,9 @@ export async function runDaemon(token: string, config: Config, signal: AbortSign
 
     try {
       const window = await anchor(token, config);
-      const wakeAt = window.resetAt + config.offsetSeconds;
-      log(`sleeping until ${clock(wakeAt)}`);
-      await sleep(wakeAt - Math.floor(Date.now() / 1000), signal);
+      const seconds = secondsUntilNextProbe(window, config);
+      log(`sleeping ${seconds}s until ${clock(Math.floor(Date.now() / 1000) + seconds)}`);
+      await sleep(seconds, signal);
     } catch (error) {
       log(`probe failed: ${error instanceof Error ? error.message : String(error)}`);
       log(`retrying in ${RETRY_SECONDS}s`);

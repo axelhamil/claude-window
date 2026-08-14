@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">32.3% </span>
+                <span class="strong">40.54% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>21/65</span>
+                <span class='fraction'>30/74</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>5/5</span>
+                <span class='fraction'>6/6</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">42.85% </span>
+                <span class="strong">50% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>3/7</span>
+                <span class='fraction'>4/8</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">32.3% </span>
+                <span class="strong">40.54% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>21/65</span>
+                <span class='fraction'>30/74</span>
             </div>
         
             
@@ -138,10 +138,21 @@
 <a name='L73'></a><a href='#L73'>73</a>
 <a name='L74'></a><a href='#L74'>74</a>
 <a name='L75'></a><a href='#L75'>75</a>
-<a name='L76'></a><a href='#L76'>76</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
@@ -181,6 +192,15 @@
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -218,6 +238,7 @@ import { saveSnapshot } from "./state.js";
 import { fetchWindow, type RateLimitWindow, windowStart } from "./window.js";
 &nbsp;
 const RETRY_SECONDS = 300;
+const MIN_SLEEP_SECONDS = 60;
 &nbsp;
 export function clock(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleTimeString([], {
@@ -257,6 +278,15 @@ export function withinActiveHours(config: Config, now = new Date()): boolean {
   return hour &gt;= config.startHour &amp;&amp; hour &lt; config.endHour;
 }
 &nbsp;
+export function secondsUntilNextProbe(
+  window: RateLimitWindow,
+  config: Config,
+  now = Date.now(),
+): number {
+  const wakeAt = window.resetAt + config.offsetSeconds;
+  return Math.max(wakeAt - Math.floor(now / 1000), MIN_SLEEP_SECONDS);
+}
+&nbsp;
 <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >export async function anchor(token: string, config: Config): Promise&lt;RateLimitWindow&gt; {</span></span>
 <span class="cstat-no" title="statement not covered" >  const window = await fetchWindow(token, config.model);</span>
 <span class="cstat-no" title="statement not covered" >  saveSnapshot(window);</span>
@@ -278,9 +308,9 @@ export function withinActiveHours(config: Config, now = new Date()): boolean {
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    try {</span>
 <span class="cstat-no" title="statement not covered" >      const window = await anchor(token, config);</span>
-<span class="cstat-no" title="statement not covered" >      const wakeAt = window.resetAt + config.offsetSeconds;</span>
-<span class="cstat-no" title="statement not covered" >      log(`sleeping until ${clock(wakeAt)}`);</span>
-<span class="cstat-no" title="statement not covered" >      await sleep(wakeAt - Math.floor(Date.now() / 1000), signal);</span>
+<span class="cstat-no" title="statement not covered" >      const seconds = secondsUntilNextProbe(window, config);</span>
+<span class="cstat-no" title="statement not covered" >      log(`sleeping ${seconds}s until ${clock(Math.floor(Date.now() / 1000) + seconds)}`);</span>
+<span class="cstat-no" title="statement not covered" >      await sleep(seconds, signal);</span>
 <span class="cstat-no" title="statement not covered" >    } catch (error) {</span>
 <span class="cstat-no" title="statement not covered" >      log(`probe failed: ${error instanceof Error ? error.message : String(error)}`);</span>
 <span class="cstat-no" title="statement not covered" >      log(`retrying in ${RETRY_SECONDS}s`);</span>
@@ -295,7 +325,7 @@ export function withinActiveHours(config: Config, now = new Date()): boolean {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-08-14T19:55:23.495Z
+                at 2026-08-14T20:33:50.557Z
             </div>
         <script src="prettify.js"></script>
         <script>
