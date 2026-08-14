@@ -28,15 +28,28 @@
   "scripts": {
     "build": "bun build src/cli.ts --target=node --outfile dist/cli.js --minify",
     "dev": "bun run src/cli.ts",
+    "analyze": "bun run scripts/analyze-usage.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "bun run build",
-    "analyze": "bun run scripts/analyze-usage.ts"
+    "lint": "biome check",
+    "lint:fix": "biome check --fix",
+    "format": "biome format --write",
+    "check": "biome check && pnpm typecheck && pnpm test && pnpm build",
+    "prepublishOnly": "pnpm build"
   },
   "dependencies": {
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.7",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
     "@types/node": "^22.10.2",
-    "typescript": "^5.7.2"
+    "@vitest/coverage-v8": "^3.0.0",
+    "semantic-release": "^24.2.0",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
   }
 }

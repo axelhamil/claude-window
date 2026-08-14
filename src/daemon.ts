@@ -1,6 +1,6 @@
 import type { Config } from "./config.js";
 import { saveSnapshot } from "./state.js";
-import { fetchWindow, windowStart, type RateLimitWindow } from "./window.js";
+import { fetchWindow, type RateLimitWindow, windowStart } from "./window.js";
 
 const RETRY_SECONDS = 300;
 
@@ -19,10 +19,14 @@ export function log(message: string): void {
 function sleep(seconds: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, seconds * 1000);
-    signal.addEventListener("abort", () => {
-      clearTimeout(timer);
-      resolve();
-    }, { once: true });
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
   });
 }
 

@@ -46,7 +46,9 @@ export function systemdManager(executable: string, args: string[]): ServiceManag
       try {
         execFileSync("loginctl", ["enable-linger", process.env.USER ?? ""], { stdio: "ignore" });
       } catch {
-        process.stderr.write("warning: could not enable linger, the daemon stops when you log out\n");
+        process.stderr.write(
+          "warning: could not enable linger, the daemon stops when you log out\n",
+        );
       }
 
       systemctl("daemon-reload");

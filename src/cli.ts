@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import pkg from "../package.json" with { type: "json" };
 import { loadConfig, loadToken } from "./config.js";
 import { anchor, clock, runDaemon } from "./daemon.js";
 import { configDir, stateFile, tokenFile } from "./paths.js";
 import { serviceManager } from "./service/manager.js";
 import { readSnapshot } from "./state.js";
 
-const VERSION = "0.4.1";
+const VERSION = pkg.version;
 
 const USAGE = `claude-window ${VERSION}
 
@@ -22,7 +23,9 @@ const USAGE = `claude-window ${VERSION}
 function login(token: string | undefined): void {
   const value = token?.replace(/\s+/g, "");
   if (!value?.startsWith("sk-ant-oat")) {
-    throw new Error('expected a token starting with "sk-ant-oat", get one with: claude setup-token');
+    throw new Error(
+      'expected a token starting with "sk-ant-oat", get one with: claude setup-token',
+    );
   }
 
   const path = tokenFile();
@@ -111,4 +114,3 @@ main(process.argv.slice(2))
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
   });
-

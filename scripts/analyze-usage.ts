@@ -11,7 +11,8 @@ const TIMESTAMP = /"timestamp":"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/;
 const OUTPUT_TOKENS = /"output_tokens":(\d+)/;
 
 const includeToday = process.argv.includes("--include-today");
-const home = process.argv.find((a) => a.startsWith("--home="))?.slice(7) ?? join(homedir(), ".claude");
+const home =
+  process.argv.find((a) => a.startsWith("--home="))?.slice(7) ?? join(homedir(), ".claude");
 
 function dayKey(date: Date): string {
   return date.toLocaleDateString("sv-SE");
@@ -105,7 +106,7 @@ function openedWithDaemon(events: Date[], day: string): Date[] {
   let index = 0;
 
   while (index < queue.length || wake !== null) {
-    const nextEvent = index < queue.length ? queue[index]! : Number.POSITIVE_INFINITY;
+    const nextEvent = queue.at(index) ?? Number.POSITIVE_INFINITY;
     const nextWake = wake ?? Number.POSITIVE_INFINITY;
     const moment = Math.min(nextEvent, nextWake);
     if (!Number.isFinite(moment)) break;
@@ -124,9 +125,8 @@ function openedWithDaemon(events: Date[], day: string): Date[] {
 }
 
 function usefulWindows(starts: Date[], events: Date[]): number {
-  return starts.filter((s) =>
-    events.some((e) => e >= s && e.getTime() < s.getTime() + WINDOW_MS),
-  ).length;
+  return starts.filter((s) => events.some((e) => e >= s && e.getTime() < s.getTime() + WINDOW_MS))
+    .length;
 }
 
 const prompts = readPrompts(join(home, "history.jsonl"));
@@ -181,7 +181,10 @@ for (const [label, from, to] of bands) {
 
 let peak = 0;
 for (let h = 0; h < 24; h++) if ((hourly[h] ?? 0) > (hourly[peak] ?? 0)) peak = h;
-const firstHours = [...byDay.values()].map((l) => l[0]!.getHours());
+const firstHours = [...byDay.values()]
+  .map((list) => list.at(0))
+  .filter((first): first is Date => first !== undefined)
+  .map((first) => first.getHours());
 console.log(`peak hour     ${String(peak).padStart(2, "0")}h`);
 console.log(`first prompt  ${Math.min(...firstHours)}h to ${Math.max(...firstHours)}h across days`);
 console.log();
@@ -191,8 +194,7 @@ let morning = 0;
 let chained = 0;
 let improved = 0;
 
-for (const day of days) {
-  const events = byDay.get(day)!;
+for (const [day, events] of [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b))) {
   const a = usefulWindows(openedNaturally(events), events);
   const b = usefulWindows(openedWithMorningPing(events, day), events);
   const c = usefulWindows(openedWithDaemon(events, day), events);
@@ -205,7 +207,9 @@ for (const day of days) {
 const gain = (v: number) => `+${(((v - none) / none) * 100).toFixed(0)} %`;
 console.log("strategy                useful windows   gain");
 console.log(`do nothing              ${String(none).padStart(14)}   reference`);
-console.log(`single ${START_HOUR}h ping          ${String(morning).padStart(14)}   ${gain(morning)}`);
+console.log(
+  `single ${START_HOUR}h ping          ${String(morning).padStart(14)}   ${gain(morning)}`,
+);
 console.log(`ping on every expiry    ${String(chained).padStart(14)}   ${gain(chained)}`);
 console.log();
 console.log(`days improved by chaining   ${improved}/${byDay.size}`);
