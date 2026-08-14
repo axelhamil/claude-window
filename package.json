@@ -1,6 +1,6 @@
 {
   "name": "claude-window",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Pin your Claude Code 5-hour rate-limit window to a fixed hour",
   "license": "MIT",
   "author": "axelhamil",
