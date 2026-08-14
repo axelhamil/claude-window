@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+VERSION="0.2.0"
+REPO="https://github.com/axelhamil/claude-window.git"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/claude-window"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-window"
 STATE="$STATE_DIR/state"
 OFFSET="${CLAUDE_WINDOW_OFFSET:-120}"
@@ -48,8 +51,39 @@ case "$MODE" in
     echo "usage 5h ${u5} | 7d ${u7}"
     exit 0
     ;;
+  version)
+    echo "claude-window $VERSION"
+    exit 0
+    ;;
+  update)
+    src=$(cat "$CONFIG_DIR/src" 2>/dev/null || echo "")
+    if [[ -z $src || ! -d $src/.git ]]; then
+      command -v git >/dev/null || { echo "git required to update"; exit 1; }
+      src="${XDG_DATA_HOME:-$HOME/.local/share}/claude-window/src"
+      if [[ ! -d $src/.git ]]; then
+        echo "cloning $REPO"
+        mkdir -p "$(dirname "$src")"
+        git clone -q "$REPO" "$src" || exit 1
+      fi
+      mkdir -p "$CONFIG_DIR"
+      echo "$src" > "$CONFIG_DIR/src"
+    fi
+    before=$VERSION
+    git -C "$src" pull -q --ff-only || { echo "pull failed, check $src"; exit 1; }
+    after=$(awk -F'"' '/^VERSION=/{print $2; exit}' "$src/claude-window")
+    if [[ $before == "$after" ]] && cmp -s "$src/claude-window" "$0"; then
+      echo "already up to date ($before)"
+      exit 0
+    fi
+    "$src/install.sh" || exit 1
+    if systemctl is-active --quiet claude-window 2>/dev/null; then
+      sudo systemctl restart claude-window && echo "restarted"
+    fi
+    echo "updated $before -> $after"
+    exit 0
+    ;;
   once|daemon) ;;
-  *) echo "usage: claude-window [daemon|once|status]"; exit 2 ;;
+  *) echo "usage: claude-window [daemon|once|status|update|version]"; exit 2 ;;
 esac
 
 [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]] || { log "CLAUDE_CODE_OAUTH_TOKEN is not set"; exit 1; }

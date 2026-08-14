@@ -74,8 +74,15 @@ sudo systemctl restart claude-window
 
 ```bash
 claude-window status                       # last known window state, costs nothing
+claude-window update                       # pull, reinstall, restart
+claude-window version
 sudo journalctl -u claude-window -f -o cat # live
 ```
+
+`update` pulls the clone `install.sh` was run from, reinstalls the binary, rewrites the
+unit only if it actually changed, and restarts the service. If the original clone is
+gone it re-clones into `~/.local/share/claude-window/src` and carries on. Run it on
+every machine where this is installed — nothing auto-updates behind your back.
 
 ```
 16:09:48 ancre ok http=200 fenetre 15:30->20:30 util5=0.36 util7=0.04
