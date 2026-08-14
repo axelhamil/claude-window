@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { logFile } from "../paths.js";
 import type { ServiceManager } from "./manager.js";
+import { escapeXml } from "./xml.js";
 
 const LABEL = "com.axelhamil.claude-window";
 
@@ -13,23 +14,6 @@ function plistPath(): string {
 
 function launchctl(...args: string[]): string {
   return execFileSync("launchctl", args, { encoding: "utf8" }).trim();
-}
-
-function escapeXml(value: string): string {
-  return value.replace(/[<>&'"]/g, (char) => {
-    switch (char) {
-      case "<":
-        return "&lt;";
-      case ">":
-        return "&gt;";
-      case "&":
-        return "&amp;";
-      case "'":
-        return "&apos;";
-      default:
-        return "&quot;";
-    }
-  });
 }
 
 function plist(executable: string, args: string[]): string {

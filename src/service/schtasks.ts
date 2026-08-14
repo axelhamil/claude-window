@@ -3,28 +3,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ServiceManager } from "./manager.js";
+import { escapeXml } from "./xml.js";
 
 const TASK = "claude-window";
 
 function schtasks(...args: string[]): string {
   return execFileSync("schtasks", args, { encoding: "utf8" }).trim();
-}
-
-function escapeXml(value: string): string {
-  return value.replace(/[<>&'"]/g, (char) => {
-    switch (char) {
-      case "<":
-        return "&lt;";
-      case ">":
-        return "&gt;";
-      case "&":
-        return "&amp;";
-      case "'":
-        return "&apos;";
-      default:
-        return "&quot;";
-    }
-  });
 }
 
 function taskXml(executable: string, args: string[]): string {
