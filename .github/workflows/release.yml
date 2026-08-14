@@ -26,13 +26,6 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Check secrets are populated
-        env:
-          NPM: ${{ secrets.NPM_TOKEN }}
-          GH: ${{ secrets.GH_TOKEN }}
-        run: |
-          echo "NPM_TOKEN length: ${#NPM}"
-          echo "GH_TOKEN length: ${#GH}"
       - run: pnpm install --frozen-lockfile
       - run: pnpm biome check
       - run: pnpm typecheck
