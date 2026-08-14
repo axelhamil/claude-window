@@ -1,4 +1,4 @@
-# cc-anchor
+# claude-window
 
 Pin your Claude Code 5-hour rate-limit window to the clock, so your reset always lands when you actually need it.
 
@@ -40,7 +40,7 @@ anthropic-ratelimit-unified-7d-reset: 1787302800
 anthropic-ratelimit-unified-7d-utilization: 0.04
 ```
 
-So `cc-anchor` runs one tiny request, reads the real reset timestamp, sleeps until exactly that moment plus a small offset, and repeats. Every window opens the instant the previous one closes — the chain never breaks, and the whole grid stays pinned to your anchor hour.
+So `claude-window` runs one tiny request, reads the real reset timestamp, sleeps until exactly that moment plus a small offset, and repeats. Every window opens the instant the previous one closes — the chain never breaks, and the whole grid stays pinned to your anchor hour.
 
 Between pings it is a sleeping bash process. No polling, no cron spam: **4 wakeups a day, ~6 MB RSS**. It runs happily on a Raspberry Pi Zero 2 W next to Pi-hole.
 
@@ -49,8 +49,8 @@ Between pings it is a sleeping bash process. No polling, no cron spam: **4 wakeu
 Needs `bash`, `curl`, and a systemd host that stays on 24/7.
 
 ```bash
-git clone https://github.com/axelhamil/cc-anchor
-cd cc-anchor
+git clone https://github.com/axelhamil/claude-window
+cd claude-window
 ./install.sh
 ```
 
@@ -63,9 +63,9 @@ claude setup-token
 and drop it on the host running the daemon:
 
 ```bash
-printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' 'sk-ant-oat01-...' > ~/.config/cc-anchor/env
-chmod 600 ~/.config/cc-anchor/env
-sudo systemctl restart cc-anchor
+printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' 'sk-ant-oat01-...' > ~/.config/claude-window/env
+chmod 600 ~/.config/claude-window/env
+sudo systemctl restart claude-window
 ```
 
 > Paste the token carefully. If your terminal wraps it across two lines or slips in a space, you get a silent `401`.
@@ -73,8 +73,8 @@ sudo systemctl restart cc-anchor
 ## Usage
 
 ```bash
-cc-anchor status                       # last known window state, costs nothing
-sudo journalctl -u cc-anchor -f -o cat # live
+claude-window status                       # last known window state, costs nothing
+sudo journalctl -u claude-window -f -o cat # live
 ```
 
 ```
@@ -84,21 +84,21 @@ sudo journalctl -u cc-anchor -f -o cat # live
 
 ## Configuration
 
-Set these in `~/.config/cc-anchor/env`, then `systemctl restart cc-anchor`.
+Set these in `~/.config/claude-window/env`, then `systemctl restart claude-window`.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CC_ANCHOR_START` | `7` | Hour the daily anchor fires |
-| `CC_ANCHOR_END` | `23` | Stop re-anchoring after this hour |
-| `CC_ANCHOR_OFFSET` | `120` | Seconds to wait past a reset before pinging |
-| `CC_ANCHOR_MODEL` | `claude-haiku-4-5-20251001` | Model used for the 1-token ping |
+| `CLAUDE_WINDOW_START` | `7` | Hour the daily anchor fires |
+| `CLAUDE_WINDOW_END` | `23` | Stop re-anchoring after this hour |
+| `CLAUDE_WINDOW_OFFSET` | `120` | Seconds to wait past a reset before pinging |
+| `CLAUDE_WINDOW_MODEL` | `claude-haiku-4-5-20251001` | Model used for the 1-token ping |
 
-Pick `CC_ANCHOR_START` by counting back from the reset you want, in 5-hour steps. Want a fresh window at 22:00? Anchor at **07:00** (07 → 12 → 17 → 22).
+Pick `CLAUDE_WINDOW_START` by counting back from the reset you want, in 5-hour steps. Want a fresh window at 22:00? Anchor at **07:00** (07 → 12 → 17 → 22).
 
 ## Honest limitations
 
 - **It cannot move a window that is already open.** If you are typing at 06:55, the 07:00 anchor lands inside a live window and does nothing. The grid only holds if you are idle at your anchor hour.
-- **Late nights break the chain.** The daemon stops at `CC_ANCHOR_END`, so a 22:00–03:00 window expires unattended. Code at 03:15 and you open 03:00–08:00, shifting the grid by an hour. 24 is not divisible by 5, so no schedule loops cleanly across a day.
+- **Late nights break the chain.** The daemon stops at `CLAUDE_WINDOW_END`, so a 22:00–03:00 window expires unattended. Code at 03:15 and you open 03:00–08:00, shifting the grid by an hour. 24 is not divisible by 5, so no schedule loops cleanly across a day.
 - **The headers are not a documented public API.** They are what the client already receives on every call. They could change without notice.
 - **This does not create quota.** It moves window boundaries so fewer of them land mid-session. It does nothing for the weekly cap.
 

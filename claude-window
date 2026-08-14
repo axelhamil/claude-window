@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/cc-anchor"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-window"
 STATE="$STATE_DIR/state"
-OFFSET="${CC_ANCHOR_OFFSET:-120}"
-START_HOUR="${CC_ANCHOR_START:-7}"
-END_HOUR="${CC_ANCHOR_END:-23}"
-MODEL="${CC_ANCHOR_MODEL:-claude-haiku-4-5-20251001}"
+OFFSET="${CLAUDE_WINDOW_OFFSET:-120}"
+START_HOUR="${CLAUDE_WINDOW_START:-7}"
+END_HOUR="${CLAUDE_WINDOW_END:-23}"
+MODEL="${CLAUDE_WINDOW_MODEL:-claude-haiku-4-5-20251001}"
 API="https://api.anthropic.com/v1/messages"
 
 log() { printf '%s %s\n' "$(date '+%H:%M:%S')" "$*"; }
@@ -22,9 +22,9 @@ probe() {
     -H "anthropic-beta: oauth-2025-04-20" \
     -H "content-type: application/json" \
     -d "{\"model\":\"$MODEL\",\"max_tokens\":1,\"system\":[{\"type\":\"text\",\"text\":\"You are Claude Code, Anthropic's official CLI for Claude.\"}],\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}") || code=000
-  RESET=$(awk -F': ' 'tolower($0) ~ /5h-reset/   {gsub(/\r/,"",$2); print $2}' "$hdr")
-  UTIL5=$(awk -F': ' 'tolower($0) ~ /5h-utilization/{gsub(/\r/,"",$2); print $2}' "$hdr")
-  UTIL7=$(awk -F': ' 'tolower($0) ~ /7d-utilization/{gsub(/\r/,"",$2); print $2}' "$hdr")
+  RESET=$(awk -F': ' 'tolower($0) ~ /5h-reset/     {gsub(/\r/,"",$2); print $2}' "$hdr")
+  USAGE5=$(awk -F': ' 'tolower($0) ~ /5h-utilization/{gsub(/\r/,"",$2); print $2}' "$hdr")
+  USAGE7=$(awk -F': ' 'tolower($0) ~ /7d-utilization/{gsub(/\r/,"",$2); print $2}' "$hdr")
   CODE="$code"
   rm -f "$hdr"
   [[ "$code" == 200 || "$code" == 429 ]] && [[ "$RESET" =~ ^[0-9]+$ ]]
@@ -34,23 +34,25 @@ nap() {
   local until=$1 d
   d=$(( until - $(date +%s) ))
   (( d > 0 )) || return 0
-  log "dodo ${d}s -> $(hm "$until")"
+  log "sleeping ${d}s until $(hm "$until")"
   sleep "$d"
 }
 
-case "${1:-daemon}" in
+MODE="${1:-daemon}"
+
+case "$MODE" in
   status)
-    [[ -r $STATE ]] || { echo "aucun etat"; exit 1; }
+    [[ -r $STATE ]] || { echo "no state yet"; exit 1; }
     read -r r u5 u7 _ < "$STATE"
-    echo "fenetre courante -> reset $(hm "$r") (dans $(( (r - $(date +%s)) / 60 )) min)"
-    echo "utilisation 5h ${u5}  |  7j ${u7}"
+    echo "window -> reset $(hm "$r") (in $(( (r - $(date +%s)) / 60 )) min)"
+    echo "usage 5h ${u5} | 7d ${u7}"
     exit 0
     ;;
   once|daemon) ;;
-  *) echo "usage: cc-anchor [daemon|once|status]"; exit 2 ;;
+  *) echo "usage: claude-window [daemon|once|status]"; exit 2 ;;
 esac
 
-[[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]] || { log "CLAUDE_CODE_OAUTH_TOKEN absent"; exit 1; }
+[[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]] || { log "CLAUDE_CODE_OAUTH_TOKEN is not set"; exit 1; }
 mkdir -p "$STATE_DIR"
 
 while :; do
@@ -63,13 +65,13 @@ while :; do
   fi
 
   if probe; then
-    printf '%s %s %s\n' "$RESET" "$UTIL5" "$UTIL7" > "$STATE"
-    log "ancre ok http=$CODE fenetre $(hm "$((RESET-18000))")->$(hm "$RESET") util5=$UTIL5 util7=$UTIL7"
-    [[ "${1:-daemon}" == once ]] && exit 0
+    printf '%s %s %s\n' "$RESET" "$USAGE5" "$USAGE7" > "$STATE"
+    log "anchored http=$CODE window $(hm "$((RESET-18000))")->$(hm "$RESET") usage5=$USAGE5 usage7=$USAGE7"
+    [[ "$MODE" == once ]] && exit 0
     nap "$(( RESET + OFFSET ))"
   else
-    log "echec http=$CODE retry +5min"
-    [[ "${1:-daemon}" == once ]] && exit 1
+    log "probe failed http=$CODE retrying in 5min"
+    [[ "$MODE" == once ]] && exit 1
     sleep 300
   fi
 done
