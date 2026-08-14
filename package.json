@@ -29,7 +29,7 @@
   "scripts": {
     "build": "bun build src/cli.ts --target=node --outfile dist/cli.js --minify",
     "dev": "bun run src/cli.ts",
-    "analyze": "bun run scripts/analyze-usage.ts",
+    "analyze": "node scripts/analyze-usage.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

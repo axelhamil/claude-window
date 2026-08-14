@@ -53,7 +53,15 @@ claude-window login "$(claude setup-token)"
 claude-window install
 ```
 
-Expect around 85 MB of resident memory under Node. On a memory-tight host such as a Raspberry Pi Zero 2 W, check what you have left before installing.
+Expect around 85 MB of resident memory under Node.
+
+On a memory-tight host, run the installed package under Bun instead and you drop to about 48 MB. Install through npm as usual, then register the service with Bun so the generated unit points at it:
+
+```bash
+bun "$(npm root -g)/claude-window/dist/cli.js" install
+```
+
+`npm update -g claude-window` keeps working, and the daemon keeps running under Bun. Measured on a Raspberry Pi Zero 2 W: 84 MB under Node, 47 MB under Bun, out of 464 MB total shared with Pi-hole.
 
 `install` registers a background service using whatever your OS provides:
 
@@ -100,7 +108,7 @@ Before trusting any of this, run the numbers against your own history:
 ```bash
 git clone https://github.com/axelhamil/claude-window
 cd claude-window && pnpm install
-bun run analyze
+pnpm analyze
 ```
 
 It reads `~/.claude/history.jsonl` locally, sends nothing anywhere, and replays your days under three strategies. On my own 137 days:
