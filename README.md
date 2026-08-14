@@ -45,13 +45,15 @@ Between probes it is a sleeping process. No polling, no cron: **4 wakeups a day*
 
 ## Install
 
-Needs Node 22+ or Bun, on a machine that stays on.
+Needs **Node 22 or later** on a machine that stays on. Bun alone is not enough: the published binary starts with `#!/usr/bin/env node`, so a Bun-only host fails with `env: 'node': No such file or directory`. Bun is fine for working on the source, not for running the installed package.
 
 ```bash
 npm install -g claude-window
 claude-window login "$(claude setup-token)"
 claude-window install
 ```
+
+Expect around 85 MB of resident memory under Node. On a memory-tight host such as a Raspberry Pi Zero 2 W, check what you have left before installing.
 
 `install` registers a background service using whatever your OS provides:
 
@@ -97,7 +99,7 @@ Before trusting any of this, run the numbers against your own history:
 
 ```bash
 git clone https://github.com/axelhamil/claude-window
-cd claude-window && bun install
+cd claude-window && pnpm install
 bun run analyze
 ```
 
