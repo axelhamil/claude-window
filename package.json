@@ -40,9 +40,6 @@
     "check": "biome check && pnpm typecheck && pnpm test && pnpm build",
     "prepublishOnly": "pnpm build"
   },
-  "dependencies": {
-    "zod": "^3.23.8"
-  },
   "devDependencies": {
     "@biomejs/biome": "^2.5.7",
     "@semantic-release/changelog": "^6.0.3",

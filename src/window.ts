@@ -1,5 +1,3 @@
-import { z } from "zod";
-
 const ENDPOINT = "https://api.anthropic.com/v1/messages";
 const WINDOW_SECONDS = 5 * 60 * 60;
 
@@ -9,13 +7,16 @@ const HEADER = {
   usage7d: "anthropic-ratelimit-unified-7d-utilization",
 } as const;
 
-const windowSchema = z.object({
-  resetAt: z.coerce.number().int().positive(),
-  usage5h: z.coerce.number().min(0).catch(0),
-  usage7d: z.coerce.number().min(0).catch(0),
-});
+export interface RateLimitWindow {
+  resetAt: number;
+  usage5h: number;
+  usage7d: number;
+}
 
-export type RateLimitWindow = z.infer<typeof windowSchema>;
+function readUtilization(raw: string | null): number {
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
 
 export function windowStart(window: RateLimitWindow): number {
   return window.resetAt - WINDOW_SECONDS;
@@ -43,15 +44,14 @@ export async function fetchWindow(token: string, model: string): Promise<RateLim
     throw new Error(`probe rejected with HTTP ${response.status}`);
   }
 
-  const parsed = windowSchema.safeParse({
-    resetAt: response.headers.get(HEADER.resetAt),
-    usage5h: response.headers.get(HEADER.usage5h),
-    usage7d: response.headers.get(HEADER.usage7d),
-  });
-
-  if (!parsed.success) {
+  const resetAt = Number(response.headers.get(HEADER.resetAt));
+  if (!Number.isInteger(resetAt) || resetAt <= 0) {
     throw new Error(`missing rate-limit headers on a HTTP ${response.status} response`);
   }
 
-  return parsed.data;
+  return {
+    resetAt,
+    usage5h: readUtilization(response.headers.get(HEADER.usage5h)),
+    usage7d: readUtilization(response.headers.get(HEADER.usage7d)),
+  };
 }

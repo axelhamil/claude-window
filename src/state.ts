@@ -1,17 +1,27 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { z } from "zod";
 import { stateFile } from "./paths.js";
 import type { RateLimitWindow } from "./window.js";
 
-const snapshotSchema = z.object({
-  resetAt: z.number().int().positive(),
-  usage5h: z.number(),
-  usage7d: z.number(),
-  probedAt: z.number().int().positive(),
-});
+export interface Snapshot {
+  resetAt: number;
+  usage5h: number;
+  usage7d: number;
+  probedAt: number;
+}
 
-export type Snapshot = z.infer<typeof snapshotSchema>;
+function isSnapshot(value: unknown): value is Snapshot {
+  if (typeof value !== "object" || value === null) return false;
+  const { resetAt, usage5h, usage7d, probedAt } = value as Record<string, unknown>;
+  return (
+    Number.isInteger(resetAt) &&
+    (resetAt as number) > 0 &&
+    Number.isInteger(probedAt) &&
+    (probedAt as number) > 0 &&
+    typeof usage5h === "number" &&
+    typeof usage7d === "number"
+  );
+}
 
 export function saveSnapshot(window: RateLimitWindow): void {
   const path = stateFile();
@@ -31,9 +41,9 @@ export function readSnapshot(): Snapshot | null {
     throw error;
   }
 
-  const parsed = snapshotSchema.safeParse(JSON.parse(raw));
-  if (!parsed.success) {
+  const parsed: unknown = JSON.parse(raw);
+  if (!isSnapshot(parsed)) {
     throw new Error(`${path} is corrupted, delete it and let the daemon rebuild it`);
   }
-  return parsed.data;
+  return parsed;
 }
