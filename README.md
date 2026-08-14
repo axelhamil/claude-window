@@ -45,7 +45,7 @@ Between probes it is a sleeping process. No polling, no cron: **4 wakeups a day*
 
 ## Install
 
-Needs Node 20+ or Bun, on a machine that stays on.
+Needs Node 22+ or Bun, on a machine that stays on.
 
 ```bash
 npm install -g claude-window
