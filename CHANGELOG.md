@@ -1,3 +1,10 @@
+## [0.4.5](https://github.com/axelhamil/claude-window/compare/v0.4.4...v0.4.5) (2026-08-14)
+
+
+### Performance Improvements
+
+* drop zod and ship with no runtime dependencies ([e5b88dc](https://github.com/axelhamil/claude-window/commit/e5b88dc13dac11ea9afd79f3772fc7718d9a5d85))
+
 ## [0.4.4](https://github.com/axelhamil/claude-window/compare/v0.4.3...v0.4.4) (2026-08-14)
 
 ## [0.4.3](https://github.com/axelhamil/claude-window/compare/v0.4.2...v0.4.3) (2026-08-14)
