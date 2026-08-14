@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/cc-anchor"
+STATE="$STATE_DIR/state"
+OFFSET="${CC_ANCHOR_OFFSET:-120}"
+START_HOUR="${CC_ANCHOR_START:-7}"
+END_HOUR="${CC_ANCHOR_END:-23}"
+MODEL="${CC_ANCHOR_MODEL:-claude-haiku-4-5-20251001}"
+API="https://api.anthropic.com/v1/messages"
+
+log() { printf '%s %s\n' "$(date '+%H:%M:%S')" "$*"; }
+hm()  { date -d "@$1" '+%H:%M'; }
+
+probe() {
+  local hdr code
+  hdr=$(mktemp)
+  code=$(curl -sS -o /dev/null -D "$hdr" -w '%{http_code}' --max-time 30 \
+    -X POST "$API" \
+    -H "authorization: Bearer ${CLAUDE_CODE_OAUTH_TOKEN}" \
+    -H "anthropic-version: 2023-06-01" \
+    -H "anthropic-beta: oauth-2025-04-20" \
+    -H "content-type: application/json" \
+    -d "{\"model\":\"$MODEL\",\"max_tokens\":1,\"system\":[{\"type\":\"text\",\"text\":\"You are Claude Code, Anthropic's official CLI for Claude.\"}],\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}") || code=000
+  RESET=$(awk -F': ' 'tolower($0) ~ /5h-reset/   {gsub(/\r/,"",$2); print $2}' "$hdr")
+  UTIL5=$(awk -F': ' 'tolower($0) ~ /5h-utilization/{gsub(/\r/,"",$2); print $2}' "$hdr")
+  UTIL7=$(awk -F': ' 'tolower($0) ~ /7d-utilization/{gsub(/\r/,"",$2); print $2}' "$hdr")
+  CODE="$code"
+  rm -f "$hdr"
+  [[ "$code" == 200 || "$code" == 429 ]] && [[ "$RESET" =~ ^[0-9]+$ ]]
+}
+
+nap() {
+  local until=$1 d
+  d=$(( until - $(date +%s) ))
+  (( d > 0 )) || return 0
+  log "dodo ${d}s -> $(hm "$until")"
+  sleep "$d"
+}
+
+case "${1:-daemon}" in
+  status)
+    [[ -r $STATE ]] || { echo "aucun etat"; exit 1; }
+    read -r r u5 u7 _ < "$STATE"
+    echo "fenetre courante -> reset $(hm "$r") (dans $(( (r - $(date +%s)) / 60 )) min)"
+    echo "utilisation 5h ${u5}  |  7j ${u7}"
+    exit 0
+    ;;
+  once|daemon) ;;
+  *) echo "usage: cc-anchor [daemon|once|status]"; exit 2 ;;
+esac
+
+[[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]] || { log "CLAUDE_CODE_OAUTH_TOKEN absent"; exit 1; }
+mkdir -p "$STATE_DIR"
+
+while :; do
+  hour=$(date +%-H)
+  if (( hour < START_HOUR )); then
+    nap "$(date -d "today ${START_HOUR}:00" +%s)"; continue
+  fi
+  if (( hour >= END_HOUR )); then
+    nap "$(date -d "tomorrow ${START_HOUR}:00" +%s)"; continue
+  fi
+
+  if probe; then
+    printf '%s %s %s\n' "$RESET" "$UTIL5" "$UTIL7" > "$STATE"
+    log "ancre ok http=$CODE fenetre $(hm "$((RESET-18000))")->$(hm "$RESET") util5=$UTIL5 util7=$UTIL7"
+    [[ "${1:-daemon}" == once ]] && exit 0
+    nap "$(( RESET + OFFSET ))"
+  else
+    log "echec http=$CODE retry +5min"
+    [[ "${1:-daemon}" == once ]] && exit 1
+    sleep 300
+  fi
+done

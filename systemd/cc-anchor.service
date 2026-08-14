@@ -1,0 +1,17 @@
+[Unit]
+Description=Ancre la fenetre de rate limit Claude Code
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=REPLACE_USER
+EnvironmentFile=REPLACE_HOME/.config/cc-anchor/env
+ExecStart=REPLACE_HOME/.local/bin/cc-anchor daemon
+Restart=always
+RestartSec=60
+Nice=10
+MemoryMax=48M
+
+[Install]
+WantedBy=multi-user.target
