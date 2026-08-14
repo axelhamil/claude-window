@@ -2,8 +2,9 @@
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import pkg from "../package.json" with { type: "json" };
 import { loadConfig, loadToken } from "./config.js";
-import { anchor, clock, runDaemon } from "./daemon.js";
+import { anchor, runDaemon } from "./daemon.js";
 import { configDir, stateFile, tokenFile } from "./paths.js";
+import { clock } from "./scheduling.js";
 import { serviceManager } from "./service/manager.js";
 import { readSnapshot } from "./state.js";
 

@@ -25,28 +25,28 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>46/46</span>
+                <span class='fraction'>44/44</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">88.88% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>7/7</span>
+                <span class='fraction'>8/9</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>2/2</span>
+                <span class='fraction'>3/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>46/46</span>
+                <span class='fraction'>44/44</span>
             </div>
         
             
@@ -121,14 +121,6 @@
 <a name='L56'></a><a href='#L56'>56</a>
 <a name='L57'></a><a href='#L57'>57</a>
 <a name='L58'></a><a href='#L58'>58</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
@@ -139,9 +131,18 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-yes">8x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-yes">6x</span>
@@ -166,20 +167,17 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">4x</span>
 <span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { z } from "zod";
-&nbsp;
-const ENDPOINT = "https://api.anthropic.com/v1/messages";
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">const ENDPOINT = "https://api.anthropic.com/v1/messages";
 const WINDOW_SECONDS = 5 * 60 * 60;
 &nbsp;
 const HEADER = {
@@ -188,13 +186,16 @@ const HEADER = {
   usage7d: "anthropic-ratelimit-unified-7d-utilization",
 } as const;
 &nbsp;
-const windowSchema = z.object({
-  resetAt: z.coerce.number().int().positive(),
-  usage5h: z.coerce.number().min(0).catch(0),
-  usage7d: z.coerce.number().min(0).catch(0),
-});
+export interface RateLimitWindow {
+  resetAt: number;
+  usage5h: number;
+  usage7d: number;
+}
 &nbsp;
-export type RateLimitWindow = z.infer&lt;typeof windowSchema&gt;;
+function readUtilization(raw: string | null): number {
+  const value = Number(raw);
+  return Number.isFinite(value) &amp;&amp; value &gt;= 0 ? <span class="branch-0 cbranch-no" title="branch not covered" >value : 0;</span>
+}
 &nbsp;
 export function windowStart(window: RateLimitWindow): number {
   return window.resetAt - WINDOW_SECONDS;
@@ -222,17 +223,16 @@ export async function fetchWindow(token: string, model: string): Promise&lt;Rate
     throw new Error(`probe rejected with HTTP ${response.status}`);
   }
 &nbsp;
-  const parsed = windowSchema.safeParse({
-    resetAt: response.headers.get(HEADER.resetAt),
-    usage5h: response.headers.get(HEADER.usage5h),
-    usage7d: response.headers.get(HEADER.usage7d),
-  });
-&nbsp;
-  if (!parsed.success) {
+  const resetAt = Number(response.headers.get(HEADER.resetAt));
+  if (!Number.isInteger(resetAt) || resetAt &lt;= 0) {
     throw new Error(`missing rate-limit headers on a HTTP ${response.status} response`);
   }
 &nbsp;
-  return parsed.data;
+  return {
+    resetAt,
+    usage5h: readUtilization(response.headers.get(HEADER.usage5h)),
+    usage7d: readUtilization(response.headers.get(HEADER.usage7d)),
+  };
 }
 &nbsp;</pre></td></tr></table></pre>
 
@@ -241,7 +241,7 @@ export async function fetchWindow(token: string, model: string): Promise&lt;Rate
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-08-14T20:33:50.557Z
+                at 2026-08-14T20:54:21.108Z
             </div>
         <script src="prettify.js"></script>
         <script>

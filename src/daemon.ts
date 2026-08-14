@@ -1,23 +1,27 @@
 import type { Config } from "./config.js";
+import {
+  clock,
+  nextStartOfDay,
+  RETRY_SECONDS,
+  secondsUntilNextProbe,
+  withinActiveHours,
+} from "./scheduling.js";
 import { saveSnapshot } from "./state.js";
 import { fetchWindow, type RateLimitWindow, windowStart } from "./window.js";
 
-const RETRY_SECONDS = 300;
-const MIN_SLEEP_SECONDS = 60;
-
-export function clock(epochSeconds: number): string {
-  return new Date(epochSeconds * 1000).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+export interface DaemonPorts {
+  probe(token: string, model: string): Promise<RateLimitWindow>;
+  persist(window: RateLimitWindow): void;
+  report(message: string): void;
+  wait(seconds: number, signal: AbortSignal): Promise<void>;
+  nowSeconds(): number;
 }
 
-export function log(message: string): void {
+function writeToStderr(message: string): void {
   process.stderr.write(`${clock(Math.floor(Date.now() / 1000))} ${message}\n`);
 }
 
-function sleep(seconds: number, signal: AbortSignal): Promise<void> {
+function waitWithTimer(seconds: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, seconds * 1000);
     signal.addEventListener(
@@ -31,55 +35,51 @@ function sleep(seconds: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-export function nextStartOfDay(startHour: number, now = new Date()): number {
-  const target = new Date(now);
-  target.setHours(startHour, 0, 0, 0);
-  if (target <= now) target.setDate(target.getDate() + 1);
-  return Math.floor(target.getTime() / 1000);
-}
+export const defaultPorts: DaemonPorts = {
+  probe: fetchWindow,
+  persist: saveSnapshot,
+  report: writeToStderr,
+  wait: waitWithTimer,
+  nowSeconds: () => Math.floor(Date.now() / 1000),
+};
 
-export function withinActiveHours(config: Config, now = new Date()): boolean {
-  const hour = now.getHours();
-  return hour >= config.startHour && hour < config.endHour;
-}
-
-export function secondsUntilNextProbe(
-  window: RateLimitWindow,
+export async function anchor(
+  token: string,
   config: Config,
-  now = Date.now(),
-): number {
-  const wakeAt = window.resetAt + config.offsetSeconds;
-  return Math.max(wakeAt - Math.floor(now / 1000), MIN_SLEEP_SECONDS);
-}
-
-export async function anchor(token: string, config: Config): Promise<RateLimitWindow> {
-  const window = await fetchWindow(token, config.model);
-  saveSnapshot(window);
-  log(
+  ports: DaemonPorts = defaultPorts,
+): Promise<RateLimitWindow> {
+  const window = await ports.probe(token, config.model);
+  ports.persist(window);
+  ports.report(
     `anchored ${clock(windowStart(window))}->${clock(window.resetAt)} ` +
       `usage5=${window.usage5h} usage7=${window.usage7d}`,
   );
   return window;
 }
 
-export async function runDaemon(token: string, config: Config, signal: AbortSignal): Promise<void> {
+export async function runDaemon(
+  token: string,
+  config: Config,
+  signal: AbortSignal,
+  ports: DaemonPorts = defaultPorts,
+): Promise<void> {
   while (!signal.aborted) {
     if (!withinActiveHours(config)) {
       const wakeAt = nextStartOfDay(config.startHour);
-      log(`outside active hours, sleeping until ${clock(wakeAt)}`);
-      await sleep(wakeAt - Math.floor(Date.now() / 1000), signal);
+      ports.report(`outside active hours, sleeping until ${clock(wakeAt)}`);
+      await ports.wait(wakeAt - ports.nowSeconds(), signal);
       continue;
     }
 
     try {
-      const window = await anchor(token, config);
-      const seconds = secondsUntilNextProbe(window, config);
-      log(`sleeping ${seconds}s until ${clock(Math.floor(Date.now() / 1000) + seconds)}`);
-      await sleep(seconds, signal);
+      const window = await anchor(token, config, ports);
+      const seconds = secondsUntilNextProbe(window, config, ports.nowSeconds() * 1000);
+      ports.report(`sleeping ${seconds}s until ${clock(ports.nowSeconds() + seconds)}`);
+      await ports.wait(seconds, signal);
     } catch (error) {
-      log(`probe failed: ${error instanceof Error ? error.message : String(error)}`);
-      log(`retrying in ${RETRY_SECONDS}s`);
-      await sleep(RETRY_SECONDS, signal);
+      ports.report(`probe failed: ${error instanceof Error ? error.message : String(error)}`);
+      ports.report(`retrying in ${RETRY_SECONDS}s`);
+      await ports.wait(RETRY_SECONDS, signal);
     }
   }
 }

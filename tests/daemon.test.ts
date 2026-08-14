@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.js";
-import { clock, nextStartOfDay, secondsUntilNextProbe, withinActiveHours } from "../src/daemon.js";
+import { anchor, type DaemonPorts, runDaemon } from "../src/daemon.js";
+import type { RateLimitWindow } from "../src/window.js";
 
 const config: Config = {
   startHour: 7,
@@ -9,83 +10,111 @@ const config: Config = {
   model: "claude-haiku-4-5-20251001",
 };
 
-function at(hour: number, minute = 0): Date {
-  const date = new Date(2026, 7, 14, hour, minute, 0, 0);
-  return date;
+const window: RateLimitWindow = { resetAt: 1786732200, usage5h: 0.34, usage7d: 0.03 };
+
+function ports(overrides: Partial<DaemonPorts> = {}): DaemonPorts & { messages: string[] } {
+  const messages: string[] = [];
+  return {
+    messages,
+    probe: vi.fn(async () => window),
+    persist: vi.fn(),
+    report: (message: string) => {
+      messages.push(message);
+    },
+    wait: vi.fn(async () => undefined),
+    nowSeconds: () => window.resetAt - 3600,
+    ...overrides,
+  };
 }
 
-describe("clock", () => {
-  it("formats an epoch as zero-padded local HH:MM", () => {
-    expect(clock(Math.floor(at(9, 5).getTime() / 1000))).toBe("09:05");
+describe("anchor", () => {
+  it("persists what the probe returned", async () => {
+    const p = ports();
+    await anchor("sk-ant-oat01-x", config, p);
+    expect(p.persist).toHaveBeenCalledWith(window);
   });
 
-  it("uses 24-hour notation past noon", () => {
-    expect(clock(Math.floor(at(22, 30).getTime() / 1000))).toBe("22:30");
-  });
-});
-
-describe("withinActiveHours", () => {
-  it("accepts the exact start hour", () => {
-    expect(withinActiveHours(config, at(7))).toBe(true);
+  it("reports the window boundaries and usage", async () => {
+    const p = ports();
+    await anchor("sk-ant-oat01-x", config, p);
+    expect(p.messages[0]).toMatch(/^anchored \d{2}:\d{2}->\d{2}:\d{2} usage5=0.34 usage7=0.03$/);
   });
 
-  it("rejects the exact end hour", () => {
-    expect(withinActiveHours(config, at(23))).toBe(false);
-  });
-
-  it("rejects the small hours", () => {
-    expect(withinActiveHours(config, at(3))).toBe(false);
-  });
-
-  it("accepts a moment inside the range", () => {
-    expect(withinActiveHours(config, at(15, 34))).toBe(true);
+  it("lets a probe failure bubble up so the caller can retry", async () => {
+    const p = ports({
+      probe: vi.fn(async () => {
+        throw new Error("HTTP 401");
+      }),
+    });
+    await expect(anchor("bad", config, p)).rejects.toThrow("HTTP 401");
+    expect(p.persist).not.toHaveBeenCalled();
   });
 });
 
-describe("nextStartOfDay", () => {
-  it("targets today when the anchor is still ahead", () => {
-    const target = new Date(nextStartOfDay(7, at(3)) * 1000);
-    expect(target.getDate()).toBe(14);
-    expect(target.getHours()).toBe(7);
+describe("runDaemon", () => {
+  function abortAfter(calls: number): { signal: AbortSignal; controller: AbortController } {
+    const controller = new AbortController();
+    let seen = 0;
+    return {
+      controller,
+      signal: new Proxy(controller.signal, {
+        get(target, key, receiver) {
+          if (key === "aborted") {
+            if (seen >= calls) return true;
+            seen += 1;
+            return false;
+          }
+          return Reflect.get(target, key, receiver);
+        },
+      }),
+    };
+  }
+
+  it("stops immediately when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const p = ports();
+    await runDaemon("t", config, controller.signal, p);
+    expect(p.probe).not.toHaveBeenCalled();
   });
 
-  it("rolls over to tomorrow once the anchor has passed", () => {
-    const target = new Date(nextStartOfDay(7, at(18)) * 1000);
-    expect(target.getDate()).toBe(15);
-    expect(target.getHours()).toBe(7);
+  it("probes then sleeps until the next reset", async () => {
+    const { signal } = abortAfter(1);
+    const p = ports();
+    await runDaemon("t", config, signal, p);
+    expect(p.probe).toHaveBeenCalledTimes(1);
+    expect(p.wait).toHaveBeenCalledWith(3600 + config.offsetSeconds, signal);
   });
 
-  it("rolls over when called exactly on the anchor", () => {
-    const target = new Date(nextStartOfDay(7, at(7)) * 1000);
-    expect(target.getDate()).toBe(15);
-  });
-});
-
-describe("secondsUntilNextProbe", () => {
-  const window = { resetAt: 1786732200, usage5h: 0.3, usage7d: 0.05 };
-
-  it("waits until the reset plus the configured offset", () => {
-    const now = (window.resetAt - 3600) * 1000;
-    expect(secondsUntilNextProbe(window, config, now)).toBe(3600 + config.offsetSeconds);
+  it("retries after a failed probe instead of giving up", async () => {
+    const { signal } = abortAfter(1);
+    const p = ports({
+      probe: vi.fn(async () => {
+        throw new Error("network down");
+      }),
+    });
+    await runDaemon("t", config, signal, p);
+    expect(p.messages).toContain("probe failed: network down");
+    expect(p.wait).toHaveBeenCalledWith(300, signal);
   });
 
-  it("never returns less than a minute when the reset is already past", () => {
-    const now = (window.resetAt + 7200) * 1000;
-    expect(secondsUntilNextProbe(window, config, now)).toBe(60);
+  it("never probes outside the active hours", async () => {
+    const { signal } = abortAfter(1);
+    const p = ports();
+    const nightConfig: Config = { ...config, startHour: 23, endHour: 24 };
+    await runDaemon("t", nightConfig, signal, p);
+    expect(p.probe).not.toHaveBeenCalled();
+    expect(p.messages[0]).toMatch(/^outside active hours/);
   });
 
-  it("never returns a negative delay on a skewed clock", () => {
-    const now = (window.resetAt + 86400) * 1000;
-    expect(secondsUntilNextProbe(window, config, now)).toBeGreaterThan(0);
-  });
-
-  it("returns the real remaining delay while it stays above the floor", () => {
-    const now = (window.resetAt + 30) * 1000;
-    expect(secondsUntilNextProbe(window, config, now)).toBe(90);
-  });
-
-  it("clamps once less than a minute remains", () => {
-    const now = (window.resetAt + 90) * 1000;
-    expect(secondsUntilNextProbe(window, config, now)).toBe(60);
+  it("reports a non-Error rejection without crashing", async () => {
+    const { signal } = abortAfter(1);
+    const p = ports({
+      probe: vi.fn(async () => {
+        throw "socket hang up";
+      }),
+    });
+    await runDaemon("t", config, signal, p);
+    expect(p.messages).toContain("probe failed: socket hang up");
   });
 });
