@@ -6,7 +6,7 @@ import { configDir, stateFile, tokenFile } from "./paths.js";
 import { serviceManager } from "./service/manager.js";
 import { readSnapshot } from "./state.js";
 
-const VERSION = "0.4.0";
+const VERSION = "0.4.1";
 
 const USAGE = `claude-window ${VERSION}
 

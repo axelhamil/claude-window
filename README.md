@@ -91,6 +91,28 @@ Environment variables, read at daemon start:
 
 Pick `CLAUDE_WINDOW_START` by counting back from the reset you want, in 5-hour steps. Want a fresh window at 22:00? Anchor at **07:00** (07 → 12 → 17 → 22).
 
+## Measure it on your own data
+
+Before trusting any of this, run the numbers against your own history:
+
+```bash
+git clone https://github.com/axelhamil/claude-window
+cd claude-window && bun install
+bun run analyze
+```
+
+It reads `~/.claude/history.jsonl` locally, sends nothing anywhere, and replays your days under three strategies. On my own 137 days:
+
+| Strategy | Useful windows | Gain |
+|---|---|---|
+| Do nothing | 296 | reference |
+| Single 7am ping | 315 | +6 % |
+| Ping on every expiry | 359 | +21 % |
+
+A window counts as useful only if a prompt was actually sent inside it. Chaining improved 62 of my 137 days. Your mileage depends entirely on when you work, which is exactly why you should measure rather than believe the table above.
+
+`history.jsonl` survives the ~30 day pruning applied to transcripts, so it usually covers far more days than `~/.claude/projects`.
+
 ## Honest limitations
 
 - **It cannot move a window that is already open.** If you are typing at 06:55, the 07:00 anchor lands inside a live window and does nothing. The grid only holds if you are idle at your anchor hour.
