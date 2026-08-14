@@ -1,42 +1,70 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BIN="$HOME/.local/bin"
-CFG="${XDG_CONFIG_HOME:-$HOME/.config}/claude-window"
-UNIT=/etc/systemd/system/claude-window.service
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+readonly SOURCE_DIR
+readonly BIN_DIR=$HOME/.local/bin
+readonly CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/claude-window
+readonly ENV_FILE=$CONFIG_DIR/env
+readonly UNIT_FILE=/etc/systemd/system/claude-window.service
 
-command -v curl >/dev/null || { echo "curl required"; exit 1; }
-command -v systemctl >/dev/null || { echo "systemd required"; exit 1; }
+die() { echo "$*" >&2; exit 1; }
 
-mkdir -p "$BIN" "$CFG"
-install -m 755 "$SRC/claude-window" "$BIN/claude-window"
-echo "$SRC" > "$CFG/src"
+require() { command -v "$1" >/dev/null || die "$1 is required"; }
 
-if [[ ! -f "$CFG/env" ]]; then
-  printf 'CLAUDE_CODE_OAUTH_TOKEN=\n' > "$CFG/env"
-fi
-chmod 600 "$CFG/env"
+install_binary() {
+  mkdir -p "$BIN_DIR"
+  install -m 755 "$SOURCE_DIR/claude-window" "$BIN_DIR/claude-window"
+}
 
-rendered=$(sed -e "s|REPLACE_USER|$USER|g" -e "s|REPLACE_HOME|$HOME|g" "$SRC/systemd/claude-window.service")
-if [[ ! -f $UNIT ]] || ! printf '%s\n' "$rendered" | cmp -s - "$UNIT"; then
-  printf '%s\n' "$rendered" | sudo tee "$UNIT" >/dev/null
+install_config() {
+  mkdir -p "$CONFIG_DIR"
+  printf '%s\n' "$SOURCE_DIR" >"$CONFIG_DIR/src"
+  [[ -f $ENV_FILE ]] || printf 'CLAUDE_CODE_OAUTH_TOKEN=\n' >"$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+}
+
+install_unit() {
+  local rendered
+  rendered=$(sed -e "s|REPLACE_USER|$USER|g" -e "s|REPLACE_HOME|$HOME|g" \
+    "$SOURCE_DIR/systemd/claude-window.service")
+
+  if [[ -f $UNIT_FILE ]] && printf '%s\n' "$rendered" | cmp -s - "$UNIT_FILE"; then
+    return 0
+  fi
+
+  printf '%s\n' "$rendered" | sudo tee "$UNIT_FILE" >/dev/null
   sudo systemctl daemon-reload
   echo "unit updated"
-fi
+}
 
-case ":$PATH:" in
-  *":$BIN:"*) ;;
-  *) echo "note: $BIN is not in your PATH" ;;
-esac
+token_missing() {
+  ! grep -q 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat' "$ENV_FILE" 2>/dev/null
+}
 
-echo "installed $("$BIN/claude-window" version | awk '{print $2}')"
+print_next_steps() {
+  case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *) echo "note: $BIN_DIR is not in your PATH" ;;
+  esac
 
-if ! grep -q 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat' "$CFG/env" 2>/dev/null; then
-  echo
-  echo "token still missing. on your workstation:"
-  echo "    claude setup-token"
-  echo "then here:"
-  echo "    printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\\n' 'sk-ant-oat01-...' > $CFG/env"
-  echo "    sudo systemctl enable --now claude-window"
-fi
+  echo "installed $("$BIN_DIR/claude-window" version | awk '{print $2}')"
+
+  token_missing || return 0
+  cat <<-EOF
+
+	token still missing. on your workstation:
+	    claude setup-token
+	then here:
+	    printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\\n' 'sk-ant-oat01-...' > $ENV_FILE
+	    sudo systemctl enable --now claude-window
+	EOF
+}
+
+require curl
+require systemctl
+
+install_binary
+install_config
+install_unit
+print_next_steps
