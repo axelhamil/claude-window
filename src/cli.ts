@@ -3,8 +3,9 @@ import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import pkg from "../package.json" with { type: "json" };
 import { loadConfig, loadToken } from "./config.js";
 import { anchor, createPorts, runDaemon } from "./daemon.js";
+import { readRecords } from "./history.js";
 import { configDir, stateFile, tokenFile } from "./paths.js";
-import { clock } from "./scheduling.js";
+import { historyLines, statusJson, statusLines } from "./render.js";
 import { serviceManager } from "./service/manager.js";
 import { readSnapshot } from "./state.js";
 
@@ -15,11 +16,16 @@ const USAGE = `claude-window ${VERSION}
   claude-window login <token>   store a sk-ant-oat token
   claude-window install         register the background service
   claude-window uninstall       remove it
-  claude-window status          last known window, costs nothing
+  claude-window status [--json] last known window, costs nothing
+  claude-window history         what the daemon has anchored so far
   claude-window once            probe now and exit
   claude-window daemon          run in the foreground
   claude-window version
 `;
+
+function hasFlag(args: string[], flag: string): boolean {
+  return args.includes(flag);
+}
 
 function login(token: string | undefined): void {
   const value = token?.replace(/\s+/g, "");
@@ -36,20 +42,34 @@ function login(token: string | undefined): void {
   console.log(`token stored in ${path}`);
 }
 
-function showStatus(): void {
-  const service = serviceManager();
-  console.log(`service (${service.name}): ${service.status()}`);
-
+function showStatus(args: string[]): void {
+  const manager = serviceManager();
+  const service = { name: manager.name, status: manager.status() };
   const snapshot = readSnapshot();
-  if (!snapshot) {
-    console.log(`no probe recorded yet (${stateFile()})`);
+  const config = loadConfig();
+
+  if (hasFlag(args, "--json")) {
+    console.log(statusJson(snapshot, service, config));
     return;
   }
+  for (const line of statusLines(snapshot, service, config)) console.log(line);
+  if (snapshot === null) console.log(`(${stateFile()})`);
+}
 
-  const minutes = Math.round((snapshot.resetAt - Date.now() / 1000) / 60);
-  const when = minutes >= 0 ? `in ${minutes} min` : `${-minutes} min ago`;
-  console.log(`window -> reset ${clock(snapshot.resetAt)} (${when})`);
-  console.log(`usage 5h ${snapshot.usage5h} | 7d ${snapshot.usage7d}`);
+function showHistory(args: string[]): void {
+  const limitIndex = args.indexOf("--limit");
+  const limit = limitIndex === -1 ? 20 : Number(args[limitIndex + 1]);
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error("--limit expects a positive integer");
+  }
+
+  const records = readRecords().slice(-limit);
+
+  if (hasFlag(args, "--json")) {
+    for (const record of records) console.log(JSON.stringify(record));
+    return;
+  }
+  for (const line of historyLines(records)) console.log(line);
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -75,7 +95,11 @@ async function main(argv: string[]): Promise<number> {
     }
 
     case "status":
-      showStatus();
+      showStatus(rest);
+      return 0;
+
+    case "history":
+      showHistory(rest);
       return 0;
 
     case "once": {
