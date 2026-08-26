@@ -22,6 +22,38 @@ export function windowStart(window: RateLimitWindow): number {
   return window.resetAt - WINDOW_SECONDS;
 }
 
+const FATAL_STATUSES = new Set([400, 401, 403, 404]);
+
+export class ProbeError extends Error {
+  readonly fatal: boolean;
+  readonly retryAfterSeconds: number | null;
+
+  constructor(message: string, fatal: boolean, retryAfterSeconds: number | null = null) {
+    super(message);
+    this.name = "ProbeError";
+    this.fatal = fatal;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+export function classifyStatus(status: number): "success" | "fatal" | "transient" {
+  if (status === 200 || status === 429) return "success";
+  return FATAL_STATUSES.has(status) ? "fatal" : "transient";
+}
+
+export function parseRetryAfter(raw: string | null, nowMs = Date.now()): number | null {
+  if (raw === null || raw.trim() === "") return null;
+
+  const seconds = Number(raw);
+  if (Number.isInteger(seconds) && seconds > 0) return seconds;
+
+  const target = Date.parse(raw);
+  if (Number.isNaN(target)) return null;
+
+  const delay = Math.round((target - nowMs) / 1000);
+  return delay > 0 ? delay : null;
+}
+
 export async function fetchWindow(token: string, model: string): Promise<RateLimitWindow> {
   const response = await fetch(ENDPOINT, {
     method: "POST",
@@ -40,13 +72,20 @@ export async function fetchWindow(token: string, model: string): Promise<RateLim
     signal: AbortSignal.timeout(30_000),
   });
 
-  if (response.status !== 200 && response.status !== 429) {
-    throw new Error(`probe rejected with HTTP ${response.status}`);
+  if (classifyStatus(response.status) !== "success") {
+    throw new ProbeError(
+      `probe rejected with HTTP ${response.status}`,
+      classifyStatus(response.status) === "fatal",
+      parseRetryAfter(response.headers.get("retry-after")),
+    );
   }
 
   const resetAt = Number(response.headers.get(HEADER.resetAt));
   if (!Number.isInteger(resetAt) || resetAt <= 0) {
-    throw new Error(`missing rate-limit headers on a HTTP ${response.status} response`);
+    throw new ProbeError(
+      `missing rate-limit headers on a HTTP ${response.status} response`,
+      false,
+    );
   }
 
   return {
