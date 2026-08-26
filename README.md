@@ -76,10 +76,12 @@ All three restart the daemon if it dies and start it at boot or logon.
 ## Usage
 
 ```bash
-claude-window status      # service state + last known window, costs nothing
-claude-window history     # replay past anchors and failures
-claude-window once        # probe now and exit
-claude-window daemon      # run in the foreground
+claude-window status                    # service state + last known window, costs nothing
+claude-window history                   # replay past anchors and failures
+claude-window history --limit 50        # show more (or fewer) than the default 20 lines
+claude-window history --json            # one JSON object per line, from history.jsonl
+claude-window once                      # probe now and exit
+claude-window daemon                    # run in the foreground
 claude-window uninstall
 ```
 
@@ -98,14 +100,16 @@ usage 5h 0.79 | 7d 0.08
     usage 5h 0.34 | 7d 0.03
 
 `claude-window history` replays what the daemon has done, from `history.jsonl` in your state
-directory — 500 records, oldest dropped first:
+directory — 500 records, oldest dropped first, each line dated so a run spanning several days
+stays readable:
 
-    07:02  anchor   reset 12:02  usage5=0  on grid
-    12:02  anchor   reset 17:02  usage5=0.34  on grid
-    17:04  failure  probe rejected with HTTP 503
+    08-14 07:02  anchor   reset 12:02  usage5=0  on grid
+    08-14 12:02  anchor   reset 17:02  usage5=0.34  on grid
+    08-14 17:04  failure  probe rejected with HTTP 503
 
-Both take `--json`: `status --json` prints one versioned object, `history --json` prints one
-object per line. Diagnostics go to stderr, so piping into `jq` is always safe.
+`--limit <n>` controls how many lines to show (default 20). Both commands also take `--json`:
+`status --json` prints one versioned object, `history --json` prints one object per line, taken
+straight from `history.jsonl`. Diagnostics go to stderr, so piping into `jq` is always safe.
 
 ### Knowing when it dies
 
@@ -118,6 +122,15 @@ an alert instead of quietly not anchoring. A monitoring outage never interrupts 
 An expired or revoked token is fatal, not transient: the daemon says so and exits instead of
 retrying every five minutes forever. On Linux the unit gives up after three such exits in an
 hour and shows as `failed`. Refresh with `claude-window login "$(claude setup-token)"`.
+
+### Upgrading from before 0.5.0
+
+The `StartLimitIntervalSec`/`StartLimitBurst` guard above only exists in unit files written by
+`claude-window install`. `npm update -g claude-window` updates the binary but never touches
+`~/.config/systemd/user/claude-window.service`, so an existing install keeps the old unit and
+restart-loops every 60s forever on a fatal token error instead of giving up. Re-run
+`claude-window install` after upgrading to regenerate the unit — it is idempotent and safe to
+run again.
 
 ## Configuration
 
