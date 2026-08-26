@@ -2,7 +2,7 @@ import type { Config } from "./config.js";
 import type { RateLimitWindow } from "./window.js";
 
 export const MIN_SLEEP_SECONDS = 60;
-export const GRID_TOLERANCE_SECONDS = 900;
+export const MIN_GRID_TOLERANCE_SECONDS = 900;
 export const BACKOFF_BASE_SECONDS = 60;
 export const BACKOFF_CAP_SECONDS = 1800;
 
@@ -75,6 +75,10 @@ export function driftSeconds(resetAt: number, config: Config): number {
   return nearest;
 }
 
+export function gridTolerance(config: Config): number {
+  return Math.max(MIN_GRID_TOLERANCE_SECONDS, 4 * config.offsetSeconds);
+}
+
 export function onGrid(resetAt: number, config: Config): boolean {
-  return Math.abs(driftSeconds(resetAt, config)) <= GRID_TOLERANCE_SECONDS;
+  return Math.abs(driftSeconds(resetAt, config)) <= gridTolerance(config);
 }

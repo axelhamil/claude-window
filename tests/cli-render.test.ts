@@ -71,18 +71,40 @@ describe("historyLines", () => {
   ];
 
   it("renders one line per record", () => {
-    expect(historyLines(records)).toHaveLength(2);
+    expect(historyLines(records, config)).toHaveLength(2);
   });
 
   it("marks an on-grid anchor", () => {
-    expect(historyLines(records)[0]).toContain("on grid");
+    expect(historyLines(records, config)[0]).toContain("on grid");
   });
 
   it("surfaces the failure reason", () => {
-    expect(historyLines(records)[1]).toContain("503");
+    expect(historyLines(records, config)[1]).toContain("503");
   });
 
   it("says so when there is nothing to show", () => {
-    expect(historyLines([]).join("")).toContain("no anchor recorded");
+    expect(historyLines([], config).join("")).toContain("no anchor recorded");
+  });
+
+  it("includes the date so lines spanning several days can be told apart", () => {
+    const at = new Date(1786700000 * 1000);
+    const month = String(at.getMonth() + 1).padStart(2, "0");
+    const day = String(at.getDate()).padStart(2, "0");
+    expect(historyLines(records, config)[0]).toContain(`${month}-${day}`);
+  });
+
+  it("widens on-grid tolerance for a large offset, keeping accumulated drift readable", () => {
+    const wideOffset: Config = { ...config, offsetSeconds: 600 };
+    const drifted: HistoryRecord[] = [
+      {
+        event: "anchor",
+        at: 1786700000,
+        resetAt: 1786732200,
+        usage5h: 0.3,
+        usage7d: 0.02,
+        drift: 1200,
+      },
+    ];
+    expect(historyLines(drifted, wideOffset)[0]).toContain("on grid");
   });
 });

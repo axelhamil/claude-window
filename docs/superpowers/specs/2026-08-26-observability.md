@@ -72,12 +72,27 @@ anchor holds (reset pinned at 22:00). None of that could be *verified* from the 
 - `driftSeconds(resetAt, config)` returns signed seconds to the *nearest* slot, positive when the
   reset is late. Grid slots are computed on the local calendar day of `resetAt`, including the
   neighbouring slots either side of midnight so a 00:30 reset compares against 22:00, not 07:00.
-- A reset is "on grid" when `|drift| <= 900` seconds. The tolerance is 15 minutes because the exact
-  rounding rule the API applies is **not known**: two observed resets landed on 22:00:00 and
-  20:30:00, which is consistent with rounding to the half hour, but two samples prove nothing.
-  Fifteen minutes is wide enough to absorb half-hour rounding without hiding a real slip of an hour
-  or more. Characterising the rule properly is precisely what the history file makes possible —
-  revisit this constant once there are a few hundred records.
+- A reset is "on grid" when `|drift| <= gridTolerance(config)`, where
+  `gridTolerance(config) = max(MIN_GRID_TOLERANCE_SECONDS, 4 × config.offsetSeconds)` and
+  `MIN_GRID_TOLERANCE_SECONDS = 900`. The 15-minute floor exists because the exact rounding rule
+  the API applies is **not known**: two observed resets landed on 22:00:00 and 20:30:00, which is
+  consistent with rounding to the half hour, but two samples prove nothing. Fifteen minutes is
+  wide enough to absorb half-hour rounding without hiding a real slip of an hour or more.
+  Characterising the rule properly is precisely what the history file makes possible — revisit
+  this constant once there are a few hundred records.
+- The tolerance is **offset-aware**, not fixed, because the offset the daemon deliberately keeps
+  out of the grid (previous bullet) does not vanish — it accumulates in `driftSeconds` across a
+  day. Each anchor probes at `resetAt + offsetSeconds`, and the API's next `resetAt` is computed
+  from that probe time, so successive anchors within the same day drift 0, `offset`, `2×offset`,
+  `3×offset` seconds late before the morning re-anchor at exactly `startHour` resets the phase
+  (4 slots between re-anchors, so at most 3 accumulations, i.e. up to `4×offset` including the
+  0-drift first slot's own margin). At the default `offsetSeconds=120` that ceiling is 480s,
+  comfortably under the 900s floor, so today's behaviour is unchanged. At
+  `CLAUDE_WINDOW_OFFSET=600` — a value the config validator explicitly allows, up to 3600 — the
+  ceiling is 2400s, and a fixed 900s tolerance would report `drifted +20 min` / `+30 min` on the
+  third and fourth anchor of every single day of a perfectly healthy daemon. Making the tolerance
+  scale with the offset (capped below by the 900s floor for small offsets) fixes that false
+  positive without touching the grid itself or the anchoring algorithm.
 
 ### R3 — Error classification
 

@@ -6,6 +6,8 @@ import {
   backoffSeconds,
   clock,
   driftSeconds,
+  gridTolerance,
+  MIN_GRID_TOLERANCE_SECONDS,
   MIN_SLEEP_SECONDS,
   nextStartOfDay,
   onGrid,
@@ -158,6 +160,22 @@ describe("onGrid", () => {
 
   it("rejects a reset that drifted early past the tolerance", () => {
     expect(onGrid(epoch(11, 20), config)).toBe(false);
+  });
+
+  it("widens the tolerance for a large offset so accumulated drift is not a false positive", () => {
+    const wideOffset: Config = { ...config, offsetSeconds: 600 };
+    expect(onGrid(epoch(12, 30), wideOffset)).toBe(true);
+  });
+});
+
+describe("gridTolerance", () => {
+  it("stays at the 15-minute floor for the default offset", () => {
+    expect(gridTolerance(config)).toBe(MIN_GRID_TOLERANCE_SECONDS);
+  });
+
+  it("widens to four times the offset once that exceeds the floor", () => {
+    const wideOffset: Config = { ...config, offsetSeconds: 600 };
+    expect(gridTolerance(wideOffset)).toBe(2400);
   });
 });
 

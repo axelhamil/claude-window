@@ -17,7 +17,8 @@ const USAGE = `claude-window ${VERSION}
   claude-window install         register the background service
   claude-window uninstall       remove it
   claude-window status [--json] last known window, costs nothing
-  claude-window history         what the daemon has anchored so far
+  claude-window history [--limit <n>] [--json]
+                                what the daemon has anchored so far
   claude-window once            probe now and exit
   claude-window daemon          run in the foreground
   claude-window version
@@ -69,7 +70,7 @@ function showHistory(args: string[]): void {
     for (const record of records) console.log(JSON.stringify(record));
     return;
   }
-  for (const line of historyLines(records)) console.log(line);
+  for (const line of historyLines(records, loadConfig())) console.log(line);
 }
 
 async function main(argv: string[]): Promise<number> {
