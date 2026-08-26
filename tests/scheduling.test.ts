@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { Config } from "../src/config.js";
 import {
   clock,
+  driftSeconds,
+  GRID_TOLERANCE_SECONDS,
   nextStartOfDay,
+  onGrid,
   secondsUntilNextProbe,
   withinActiveHours,
 } from "../src/scheduling.js";
@@ -92,5 +95,64 @@ describe("secondsUntilNextProbe", () => {
   it("clamps once less than a minute remains", () => {
     const now = (window.resetAt + 90) * 1000;
     expect(secondsUntilNextProbe(window, config, now)).toBe(60);
+  });
+});
+
+function epoch(hour: number, minute = 0): number {
+  return Math.floor(at(hour, minute).getTime() / 1000);
+}
+
+describe("driftSeconds", () => {
+  it("is zero on an exact grid slot", () => {
+    expect(driftSeconds(epoch(12, 0), config)).toBe(0);
+  });
+
+  it("is positive when the reset runs late", () => {
+    expect(driftSeconds(epoch(12, 5), config)).toBe(300);
+  });
+
+  it("is negative when the reset runs early", () => {
+    expect(driftSeconds(epoch(11, 55), config)).toBe(-300);
+  });
+
+  it("measures against the nearest slot, not the first one", () => {
+    expect(driftSeconds(epoch(17, 1), config)).toBe(60);
+  });
+
+  it("ignores the probe offset, which delays the probe and not the reset", () => {
+    const shifted = { ...config, offsetSeconds: 600 };
+    expect(driftSeconds(epoch(12, 0), shifted)).toBe(0);
+  });
+
+  it("compares a reset just after midnight to the evening slot", () => {
+    const justAfterMidnight = Math.floor(new Date(2026, 7, 15, 0, 2, 0, 0).getTime() / 1000);
+    expect(driftSeconds(justAfterMidnight, config)).toBe(7320);
+  });
+
+  it("follows the configured start hour", () => {
+    const shifted = { ...config, startHour: 9 };
+    expect(driftSeconds(epoch(14, 0), shifted)).toBe(0);
+  });
+});
+
+describe("onGrid", () => {
+  it("accepts a reset inside the tolerance", () => {
+    expect(onGrid(epoch(12, 6), config)).toBe(true);
+  });
+
+  it("accepts the reset observed in production, a probe at 17:02 resetting at 22:00", () => {
+    expect(onGrid(epoch(22, 0), config)).toBe(true);
+  });
+
+  it("accepts the tolerance boundary itself", () => {
+    expect(onGrid(epoch(12, 15), config)).toBe(true);
+  });
+
+  it("rejects a reset past the tolerance", () => {
+    expect(onGrid(epoch(12, 40), config)).toBe(false);
+  });
+
+  it("rejects a reset that drifted early past the tolerance", () => {
+    expect(onGrid(epoch(11, 20), config)).toBe(false);
   });
 });
