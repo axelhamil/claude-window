@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   appendRecord,
@@ -17,7 +17,6 @@ beforeEach(() => {
   previous = process.env.XDG_STATE_HOME;
   dir = mkdtempSync(join(tmpdir(), "claude-window-history-"));
   process.env.XDG_STATE_HOME = dir;
-  mkdirSync(join(dir, "claude-window"));
 });
 
 afterEach(() => {
@@ -49,6 +48,7 @@ describe("readRecords", () => {
   });
 
   it("skips a well-formed line whose shape is wrong", () => {
+    mkdirSync(dirname(historyFile()), { recursive: true });
     writeFileSync(historyFile(), `${JSON.stringify({ event: "anchor" })}\n`, "utf8");
     expect(readRecords()).toEqual([]);
   });
