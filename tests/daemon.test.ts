@@ -200,4 +200,74 @@ describe("runDaemon history and resilience", () => {
     await runDaemon("token", config, signal, port);
     expect(waits[1]).toBeGreaterThan(waits[0] ?? 0);
   });
+
+  it("still pings the fail heartbeat when the history port throws", async () => {
+    const { signal } = abortAfter(1);
+    const port = ports({
+      probe: vi.fn(async () => {
+        throw new ProbeError("probe rejected with HTTP 503", false);
+      }),
+      record: vi.fn(() => {
+        throw new Error("ENOSPC: no space left on device");
+      }),
+    });
+    await runDaemon("token", config, signal, port);
+    expect(port.ping).toHaveBeenCalledWith("fail");
+  });
+
+  it("does not let a throwing history port kill the loop", async () => {
+    const { signal } = abortAfter(2);
+    const port = ports({
+      probe: vi.fn(async () => {
+        throw new ProbeError("probe rejected with HTTP 503", false);
+      }),
+      record: vi.fn(() => {
+        throw new Error("ENOSPC: no space left on device");
+      }),
+    });
+    await runDaemon("token", config, signal, port);
+    expect(port.probe).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a throwing heartbeat port instead of letting it kill the loop", async () => {
+    const { signal } = abortAfter(2);
+    const port = ports({
+      probe: vi.fn(async () => {
+        throw new ProbeError("probe rejected with HTTP 503", false);
+      }),
+      ping: vi.fn(async () => {
+        throw new Error("getaddrinfo ENOTFOUND");
+      }),
+    });
+    await runDaemon("token", config, signal, port);
+    expect(port.probe).toHaveBeenCalledTimes(2);
+    expect(port.messages.some((message) => message.includes("ENOTFOUND"))).toBe(true);
+  });
+
+  it("reports a history write failure instead of swallowing it", async () => {
+    const { signal } = abortAfter(1);
+    const port = ports({
+      probe: vi.fn(async () => {
+        throw new ProbeError("probe rejected with HTTP 503", false);
+      }),
+      record: vi.fn(() => {
+        throw new Error("ENOSPC: no space left on device");
+      }),
+    });
+    await runDaemon("token", config, signal, port);
+    expect(port.messages.some((message) => message.includes("ENOSPC"))).toBe(true);
+  });
+});
+
+describe("anchor resilience", () => {
+  it("still pings success and does not throw when the history port fails", async () => {
+    const p = ports({
+      record: vi.fn(() => {
+        throw new Error("ENOSPC: no space left on device");
+      }),
+    });
+    await expect(anchor("sk-ant-oat01-x", config, p)).resolves.toEqual(window);
+    expect(p.ping).toHaveBeenCalledWith("success");
+    expect(p.messages.some((message) => message.includes("ENOSPC"))).toBe(true);
+  });
 });

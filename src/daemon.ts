@@ -27,6 +27,27 @@ function writeToStderr(message: string): void {
   process.stderr.write(`${clock(Math.floor(Date.now() / 1000))} ${message}\n`);
 }
 
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function safeRecord(ports: DaemonPorts, entry: HistoryRecord): void {
+  try {
+    ports.record(entry);
+  } catch (error) {
+    ports.report(`history write failed: ${reasonOf(error)}`);
+  }
+}
+
+async function safePing(ports: DaemonPorts, outcome: "success" | "fail"): Promise<void> {
+  try {
+    const pingError = await ports.ping(outcome);
+    if (pingError) ports.report(pingError);
+  } catch (error) {
+    ports.report(`heartbeat ping failed: ${reasonOf(error)}`);
+  }
+}
+
 function waitWithTimer(seconds: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, seconds * 1000);
@@ -63,7 +84,7 @@ export async function anchor(
   ports.persist(window);
 
   const drift = driftSeconds(window.resetAt, config);
-  ports.record({
+  safeRecord(ports, {
     event: "anchor",
     at: ports.nowSeconds(),
     resetAt: window.resetAt,
@@ -76,8 +97,7 @@ export async function anchor(
       `usage5=${window.usage5h} usage7=${window.usage7d} drift=${drift}s`,
   );
 
-  const pingError = await ports.ping("success");
-  if (pingError) ports.report(pingError);
+  await safePing(ports, "success");
 
   return window;
 }
@@ -108,11 +128,10 @@ export async function runDaemon(
       const reason = error instanceof Error ? error.message : String(error);
       const fatal = error instanceof ProbeError && error.fatal;
 
-      ports.record({ event: "failure", at: ports.nowSeconds(), reason, fatal });
+      safeRecord(ports, { event: "failure", at: ports.nowSeconds(), reason, fatal });
       ports.report(`probe failed: ${reason}`);
 
-      const pingError = await ports.ping("fail");
-      if (pingError) ports.report(pingError);
+      await safePing(ports, "fail");
 
       if (fatal) {
         ports.report("this will not fix itself, refresh the token with: claude setup-token");
