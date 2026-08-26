@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Config } from "../src/config.js";
 import {
-  backoffSeconds,
   BACKOFF_BASE_SECONDS,
   BACKOFF_CAP_SECONDS,
+  backoffSeconds,
   clock,
   driftSeconds,
-  GRID_TOLERANCE_SECONDS,
   MIN_SLEEP_SECONDS,
   nextStartOfDay,
   onGrid,

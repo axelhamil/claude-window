@@ -30,13 +30,21 @@ describe("ping", () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error("getaddrinfo ENOTFOUND");
     });
-    const message = await ping("https://hc-ping.com/abc", "success", fetchImpl as unknown as typeof fetch);
+    const message = await ping(
+      "https://hc-ping.com/abc",
+      "success",
+      fetchImpl as unknown as typeof fetch,
+    );
     expect(message).toContain("heartbeat");
   });
 
   it("reports a non-2xx response instead of throwing", async () => {
     const fetchImpl = vi.fn(async () => new Response("nope", { status: 500 }));
-    const message = await ping("https://hc-ping.com/abc", "success", fetchImpl as unknown as typeof fetch);
+    const message = await ping(
+      "https://hc-ping.com/abc",
+      "success",
+      fetchImpl as unknown as typeof fetch,
+    );
     expect(message).toContain("500");
   });
 });

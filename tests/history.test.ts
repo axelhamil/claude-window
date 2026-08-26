@@ -2,12 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  appendRecord,
-  type HistoryRecord,
-  HISTORY_LIMIT,
-  readRecords,
-} from "../src/history.js";
+import { appendRecord, HISTORY_LIMIT, type HistoryRecord, readRecords } from "../src/history.js";
 import { historyFile } from "../src/paths.js";
 
 let dir: string;
@@ -61,7 +56,12 @@ describe("appendRecord", () => {
   });
 
   it("keeps failure records with their reason and severity", () => {
-    appendRecord({ event: "failure", at: 1000, reason: "probe rejected with HTTP 401", fatal: true });
+    appendRecord({
+      event: "failure",
+      at: 1000,
+      reason: "probe rejected with HTTP 401",
+      fatal: true,
+    });
     expect(readRecords()[0]).toMatchObject({ event: "failure", fatal: true });
   });
 

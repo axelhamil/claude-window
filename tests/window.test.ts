@@ -130,19 +130,28 @@ describe("parseRetryAfter", () => {
 describe("fetchWindow failures", () => {
   it("marks an expired token as fatal", async () => {
     const response = new Response("", { status: 401 });
-    vi.stubGlobal("fetch", vi.fn(async () => response));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response),
+    );
     await expect(fetchWindow("sk-ant-oat-x", "model")).rejects.toMatchObject({ fatal: true });
   });
 
   it("marks a server error as transient", async () => {
     const response = new Response("", { status: 503 });
-    vi.stubGlobal("fetch", vi.fn(async () => response));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response),
+    );
     await expect(fetchWindow("sk-ant-oat-x", "model")).rejects.toMatchObject({ fatal: false });
   });
 
   it("carries Retry-After through to the caller", async () => {
     const response = new Response("", { status: 503, headers: { "retry-after": "900" } });
-    vi.stubGlobal("fetch", vi.fn(async () => response));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response),
+    );
     await expect(fetchWindow("sk-ant-oat-x", "model")).rejects.toMatchObject({
       retryAfterSeconds: 900,
     });
@@ -150,7 +159,10 @@ describe("fetchWindow failures", () => {
 
   it("treats missing rate-limit headers on a 200 as transient", async () => {
     const response = new Response("", { status: 200 });
-    vi.stubGlobal("fetch", vi.fn(async () => response));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response),
+    );
     await expect(fetchWindow("sk-ant-oat-x", "model")).rejects.toMatchObject({ fatal: false });
   });
 });

@@ -1,6 +1,6 @@
 import type { Config } from "./config.js";
-import { appendRecord, type HistoryRecord } from "./history.js";
 import { ping } from "./heartbeat.js";
+import { appendRecord, type HistoryRecord } from "./history.js";
 import {
   backoffSeconds,
   clock,
