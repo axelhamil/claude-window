@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { configDir, logFile, stateDir, stateFile, tokenFile } from "../src/paths.js";
+import { configDir, historyFile, logFile, stateDir, stateFile, tokenFile } from "../src/paths.js";
 
 const saved = { ...process.env };
 
@@ -58,6 +58,11 @@ describe("derived paths", () => {
     process.env.XDG_STATE_HOME = "/s";
     expect(stateFile()).toBe(join("/s", "claude-window", "state.json"));
     expect(logFile()).toBe(join("/s", "claude-window", "daemon.log"));
+  });
+
+  it("puts the history next to the state file", () => {
+    process.env.XDG_STATE_HOME = "/s";
+    expect(historyFile()).toBe(join("/s", "claude-window", "history.jsonl"));
   });
 });
 
