@@ -111,8 +111,9 @@ export async function runDaemon(
   let attempt = 0;
 
   while (!signal.aborted) {
-    if (!withinActiveHours(config)) {
-      const wakeAt = nextStartOfDay(config.startHour);
+    const now = new Date(ports.nowSeconds() * 1000);
+    if (!withinActiveHours(config, now)) {
+      const wakeAt = nextStartOfDay(config.startHour, now);
       ports.report(`outside active hours, sleeping until ${clock(wakeAt)}`);
       await ports.wait(wakeAt - ports.nowSeconds(), signal);
       continue;

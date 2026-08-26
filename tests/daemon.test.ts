@@ -13,6 +13,10 @@ const config: Config = {
 
 const window: RateLimitWindow = { resetAt: 1786732200, usage5h: 0.34, usage7d: 0.03 };
 
+function atHour(hour: number, minute = 0): number {
+  return Math.floor(new Date(2026, 7, 14, hour, minute, 0, 0).getTime() / 1000);
+}
+
 function ports(overrides: Partial<DaemonPorts> = {}): DaemonPorts & { messages: string[] } {
   const messages: string[] = [];
   return {
@@ -111,6 +115,22 @@ describe("runDaemon", () => {
     await runDaemon("t", nightConfig, signal, p);
     expect(p.probe).not.toHaveBeenCalled();
     expect(p.messages[0]).toMatch(/^outside active hours/);
+  });
+
+  it("probes when the clock port reports an hour inside the active window, regardless of the real clock", async () => {
+    const { signal } = abortAfter(1);
+    const p = ports({ nowSeconds: () => atHour(10) });
+    await runDaemon("t", config, signal, p);
+    expect(p.probe).toHaveBeenCalledTimes(1);
+  });
+
+  it("sleeps until the next start of day when the clock port reports an hour outside the active window, regardless of the real clock", async () => {
+    const { signal } = abortAfter(1);
+    const p = ports({ nowSeconds: () => atHour(2) });
+    await runDaemon("t", config, signal, p);
+    expect(p.probe).not.toHaveBeenCalled();
+    expect(p.messages[0]).toMatch(/^outside active hours, sleeping until 07:00/);
+    expect(p.wait).toHaveBeenCalledWith(5 * 3600, signal);
   });
 
   it("reports a non-Error rejection without crashing", async () => {
