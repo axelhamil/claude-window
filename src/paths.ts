@@ -36,3 +36,7 @@ export function stateFile(): string {
 export function logFile(): string {
   return join(stateDir(), "daemon.log");
 }
+
+export function historyFile(): string {
+  return join(stateDir(), "history.jsonl");
+}

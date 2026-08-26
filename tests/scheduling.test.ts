@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { Config } from "../src/config.js";
 import {
+  BACKOFF_BASE_SECONDS,
+  BACKOFF_CAP_SECONDS,
+  backoffSeconds,
   clock,
+  driftSeconds,
+  gridTolerance,
+  MIN_GRID_TOLERANCE_SECONDS,
+  MIN_SLEEP_SECONDS,
   nextStartOfDay,
+  onGrid,
   secondsUntilNextProbe,
   withinActiveHours,
 } from "../src/scheduling.js";
@@ -12,6 +20,7 @@ const config: Config = {
   endHour: 23,
   offsetSeconds: 120,
   model: "claude-haiku-4-5-20251001",
+  pingUrl: null,
 };
 
 function at(hour: number, minute = 0): Date {
@@ -92,5 +101,114 @@ describe("secondsUntilNextProbe", () => {
   it("clamps once less than a minute remains", () => {
     const now = (window.resetAt + 90) * 1000;
     expect(secondsUntilNextProbe(window, config, now)).toBe(60);
+  });
+});
+
+function epoch(hour: number, minute = 0): number {
+  return Math.floor(at(hour, minute).getTime() / 1000);
+}
+
+describe("driftSeconds", () => {
+  it("is zero on an exact grid slot", () => {
+    expect(driftSeconds(epoch(12, 0), config)).toBe(0);
+  });
+
+  it("is positive when the reset runs late", () => {
+    expect(driftSeconds(epoch(12, 5), config)).toBe(300);
+  });
+
+  it("is negative when the reset runs early", () => {
+    expect(driftSeconds(epoch(11, 55), config)).toBe(-300);
+  });
+
+  it("measures against the nearest slot, not the first one", () => {
+    expect(driftSeconds(epoch(17, 1), config)).toBe(60);
+  });
+
+  it("ignores the probe offset, which delays the probe and not the reset", () => {
+    const shifted = { ...config, offsetSeconds: 600 };
+    expect(driftSeconds(epoch(12, 0), shifted)).toBe(0);
+  });
+
+  it("compares a reset just after midnight to the evening slot", () => {
+    const justAfterMidnight = Math.floor(new Date(2026, 7, 15, 0, 2, 0, 0).getTime() / 1000);
+    expect(driftSeconds(justAfterMidnight, config)).toBe(7320);
+  });
+
+  it("follows the configured start hour", () => {
+    const shifted = { ...config, startHour: 9 };
+    expect(driftSeconds(epoch(14, 0), shifted)).toBe(0);
+  });
+});
+
+describe("onGrid", () => {
+  it("accepts a reset inside the tolerance", () => {
+    expect(onGrid(epoch(12, 6), config)).toBe(true);
+  });
+
+  it("accepts the reset observed in production, a probe at 17:02 resetting at 22:00", () => {
+    expect(onGrid(epoch(22, 0), config)).toBe(true);
+  });
+
+  it("accepts the tolerance boundary itself", () => {
+    expect(onGrid(epoch(12, 15), config)).toBe(true);
+  });
+
+  it("rejects a reset past the tolerance", () => {
+    expect(onGrid(epoch(12, 40), config)).toBe(false);
+  });
+
+  it("rejects a reset that drifted early past the tolerance", () => {
+    expect(onGrid(epoch(11, 20), config)).toBe(false);
+  });
+
+  it("widens the tolerance for a large offset so accumulated drift is not a false positive", () => {
+    const wideOffset: Config = { ...config, offsetSeconds: 600 };
+    expect(onGrid(epoch(12, 30), wideOffset)).toBe(true);
+  });
+});
+
+describe("gridTolerance", () => {
+  it("stays at the 15-minute floor for the default offset", () => {
+    expect(gridTolerance(config)).toBe(MIN_GRID_TOLERANCE_SECONDS);
+  });
+
+  it("widens to four times the offset once that exceeds the floor", () => {
+    const wideOffset: Config = { ...config, offsetSeconds: 600 };
+    expect(gridTolerance(wideOffset)).toBe(2400);
+  });
+});
+
+describe("backoffSeconds", () => {
+  const always = (value: number) => () => value;
+
+  it("never sleeps less than the floor", () => {
+    expect(backoffSeconds(1, null, always(0))).toBe(MIN_SLEEP_SECONDS);
+  });
+
+  it("spreads the first attempt over the base delay", () => {
+    expect(backoffSeconds(1, null, always(1))).toBe(BACKOFF_BASE_SECONDS * 2);
+  });
+
+  it("doubles the ceiling on every attempt", () => {
+    expect(backoffSeconds(3, null, always(1))).toBe(BACKOFF_BASE_SECONDS * 8);
+  });
+
+  it("stops growing at the cap", () => {
+    expect(backoffSeconds(20, null, always(1))).toBe(BACKOFF_CAP_SECONDS);
+  });
+
+  it("jitters between the floor and the ceiling", () => {
+    const value = backoffSeconds(4, null, always(0.5));
+    expect(value).toBeGreaterThanOrEqual(MIN_SLEEP_SECONDS);
+    expect(value).toBeLessThanOrEqual(BACKOFF_CAP_SECONDS);
+  });
+
+  it("obeys Retry-After when it asks for longer", () => {
+    expect(backoffSeconds(1, 3600, always(0))).toBe(3600);
+  });
+
+  it("ignores Retry-After when the backoff already waits longer", () => {
+    expect(backoffSeconds(20, 10, always(1))).toBe(BACKOFF_CAP_SECONDS);
   });
 });

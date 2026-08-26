@@ -223,20 +223,23 @@ Expected: FAIL — `driftSeconds is not a function`.
 Add to `src/scheduling.ts`:
 
 ```ts
-export const GRID_TOLERANCE_SECONDS = 300;
+export const GRID_TOLERANCE_SECONDS = 900;
 
+const WINDOW_SECONDS_5H = 5 * 3600;
 const SLOTS_PER_DAY = 5;
-const HOUR_SECONDS = 3600;
-const WINDOW_HOURS = 5;
+const DAY_MS = 86_400_000;
 
 function gridSlots(resetAt: number, config: Config): number[] {
-  const day = new Date(resetAt * 1000);
-  day.setHours(config.startHour, 0, 0, 0);
-  const anchor = Math.floor(day.getTime() / 1000) + config.offsetSeconds;
-
   const slots: number[] = [];
-  for (let index = -SLOTS_PER_DAY; index <= SLOTS_PER_DAY * 2; index += 1) {
-    slots.push(anchor + index * WINDOW_HOURS * HOUR_SECONDS);
+
+  for (const dayOffset of [-1, 0, 1]) {
+    const day = new Date(resetAt * 1000 + dayOffset * DAY_MS);
+    day.setHours(config.startHour, 0, 0, 0);
+    const start = Math.floor(day.getTime() / 1000);
+
+    for (let index = 0; index < SLOTS_PER_DAY; index += 1) {
+      slots.push(start + index * WINDOW_SECONDS_5H);
+    }
   }
   return slots;
 }
@@ -255,9 +258,17 @@ export function onGrid(resetAt: number, config: Config): boolean {
 }
 ```
 
-Note the loop seeds `nearest` with `0`, which is also the "perfect slot" value — that is fine
-because a candidate of `0` is already the minimum possible distance and no later candidate can
-beat it.
+Two things to understand before changing this:
+
+- **Slots are built per calendar day, not by stepping 5h across midnight.** 24h is not divisible
+  by 5h, so a single `anchor + n × 5h` sequence drifts past midnight and produces 21:00 and 02:00
+  instead of the real grid. The daily grid restarts at `startHour` every morning because the daemon
+  sleeps through the night and re-probes at `nextStartOfDay`. Five slots per day covers 07:00,
+  12:00, 17:00, 22:00 and 03:00 — that last one is the reset of the evening probe, which is a
+  legitimate outcome. Days −1/0/+1 are all generated so a reset near midnight finds its true
+  neighbour.
+- The loop seeds `nearest` with `0`, which is also the "perfect slot" value — that is fine because
+  a candidate of `0` is already the minimum possible distance and no later candidate can beat it.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -679,7 +690,11 @@ git commit -m "feat: tell an expired token apart from a transient probe failure"
 - Produces:
   - `BACKOFF_BASE_SECONDS: number` (= 60), `BACKOFF_CAP_SECONDS: number` (= 1800)
   - `backoffSeconds(attempt: number, retryAfterSeconds: number | null, random?: () => number): number`
-  Used by Task 7. `RETRY_SECONDS` is deleted; `MIN_SLEEP_SECONDS` stays and becomes the backoff floor.
+  Used by Task 8. `MIN_SLEEP_SECONDS` stays and becomes the backoff floor.
+
+**`RETRY_SECONDS` stays in place for now** — `src/daemon.ts` still imports it, and Task 8 removes
+it in the same commit that replaces its only use site. Deleting it here would leave `tsc` and the
+build red, and every task must end green.
 
 Full jitter, the form AWS recommends: `random(0, min(cap, base × 2^attempt))`, floored at
 `MIN_SLEEP_SECONDS` so repeated failures cannot hammer the endpoint. `Retry-After` wins when larger.
@@ -732,7 +747,7 @@ Expected: FAIL — `backoffSeconds is not a function`.
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `src/scheduling.ts`, delete `export const RETRY_SECONDS = 300;` and add:
+In `src/scheduling.ts`, leave `RETRY_SECONDS` untouched and add:
 
 ```ts
 export const BACKOFF_BASE_SECONDS = 60;
@@ -752,8 +767,8 @@ export function backoffSeconds(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pnpm vitest run tests/scheduling.test.ts`
-Expected: PASS. `tests/daemon.test.ts` may now fail to compile on the removed `RETRY_SECONDS` import — Task 7 fixes that; if it blocks this task, comment out the import line and restore it in Task 7.
+Run: `pnpm vitest run tests/scheduling.test.ts && pnpm typecheck`
+Expected: PASS and no TypeScript error — nothing was removed, so the rest of the tree is untouched.
 
 - [ ] **Step 5: Commit**
 
@@ -1104,7 +1119,31 @@ export function createPorts(config: Config): DaemonPorts {
 ```
 
 Delete the old `defaultPorts` constant and make `ports` a required parameter of `anchor` and
-`runDaemon` — `cli.ts` (Task 9) is the only caller and will pass `createPorts(config)`.
+`runDaemon`. Also delete `export const RETRY_SECONDS = 300;` from `src/scheduling.ts` — this task
+replaces its only use site.
+
+`src/cli.ts` is the only caller of `anchor`/`runDaemon` and currently relies on the default
+parameter, so **this task must also update its two call sites** or `tsc` goes red. Change them to:
+
+```ts
+    case "once": {
+      const config = loadConfig();
+      await anchor(loadToken(), config, createPorts(config));
+      return 0;
+    }
+
+    case "daemon": {
+      const config = loadConfig();
+      const controller = new AbortController();
+      for (const signal of ["SIGINT", "SIGTERM"] as const) {
+        process.on(signal, () => controller.abort());
+      }
+      await runDaemon(loadToken(), config, controller.signal, createPorts(config));
+      return 0;
+    }
+```
+
+Task 9 owns the new commands and `--json`; it will find these two call sites already correct.
 
 `anchor` records the anchor and pings:
 
