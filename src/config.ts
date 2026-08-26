@@ -6,6 +6,7 @@ export interface Config {
   endHour: number;
   offsetSeconds: number;
   model: string;
+  pingUrl: string | null;
 }
 
 const DEFAULTS: Config = {
@@ -13,6 +14,7 @@ const DEFAULTS: Config = {
   endHour: 23,
   offsetSeconds: 120,
   model: "claude-haiku-4-5-20251001",
+  pingUrl: null,
 };
 
 function readInteger(
@@ -31,6 +33,22 @@ function readInteger(
   return value;
 }
 
+function readUrl(name: string, raw: string | undefined): string | null {
+  if (raw === undefined || raw.trim() === "") return null;
+
+  const value = raw.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`invalid configuration (${name}: expected an http(s) url, got "${raw}")`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`invalid configuration (${name}: expected an http(s) url, got "${raw}")`);
+  }
+  return value;
+}
+
 export function loadConfig(): Config {
   const startHour = readInteger("CLAUDE_WINDOW_START", process.env.CLAUDE_WINDOW_START, 0, 23);
   const endHour = readInteger("CLAUDE_WINDOW_END", process.env.CLAUDE_WINDOW_END, 1, 24);
@@ -41,12 +59,14 @@ export function loadConfig(): Config {
     3600,
   );
   const model = process.env.CLAUDE_WINDOW_MODEL?.trim();
+  const pingUrl = readUrl("CLAUDE_WINDOW_PING_URL", process.env.CLAUDE_WINDOW_PING_URL);
 
   const config: Config = {
     startHour: startHour ?? DEFAULTS.startHour,
     endHour: endHour ?? DEFAULTS.endHour,
     offsetSeconds: offsetSeconds ?? DEFAULTS.offsetSeconds,
     model: model || DEFAULTS.model,
+    pingUrl: pingUrl ?? DEFAULTS.pingUrl,
   };
 
   if (config.endHour <= config.startHour) {

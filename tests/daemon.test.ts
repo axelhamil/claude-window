@@ -8,6 +8,7 @@ const config: Config = {
   endHour: 23,
   offsetSeconds: 120,
   model: "claude-haiku-4-5-20251001",
+  pingUrl: null,
 };
 
 const window: RateLimitWindow = { resetAt: 1786732200, usage5h: 0.34, usage7d: 0.03 };

@@ -19,6 +19,7 @@ const config: Config = {
   endHour: 23,
   offsetSeconds: 120,
   model: "claude-haiku-4-5-20251001",
+  pingUrl: null,
 };
 
 function at(hour: number, minute = 0): Date {

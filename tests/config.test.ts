@@ -9,6 +9,7 @@ const KEYS = [
   "CLAUDE_WINDOW_END",
   "CLAUDE_WINDOW_OFFSET",
   "CLAUDE_WINDOW_MODEL",
+  "CLAUDE_WINDOW_PING_URL",
   "CLAUDE_CODE_OAUTH_TOKEN",
   "XDG_CONFIG_HOME",
 ] as const;
@@ -36,6 +37,7 @@ describe("loadConfig", () => {
       endHour: 23,
       offsetSeconds: 120,
       model: "claude-haiku-4-5-20251001",
+      pingUrl: null,
     });
   });
 
@@ -50,7 +52,28 @@ describe("loadConfig", () => {
       endHour: 21,
       offsetSeconds: 300,
       model: "claude-sonnet-5",
+      pingUrl: null,
     });
+  });
+
+  it("has no heartbeat by default", () => {
+    delete process.env.CLAUDE_WINDOW_PING_URL;
+    expect(loadConfig().pingUrl).toBeNull();
+  });
+
+  it("accepts an https heartbeat url", () => {
+    process.env.CLAUDE_WINDOW_PING_URL = "https://hc-ping.com/abc";
+    expect(loadConfig().pingUrl).toBe("https://hc-ping.com/abc");
+  });
+
+  it("rejects a url that is not http", () => {
+    process.env.CLAUDE_WINDOW_PING_URL = "ftp://example.com/ping";
+    expect(() => loadConfig()).toThrow("CLAUDE_WINDOW_PING_URL");
+  });
+
+  it("rejects something that is not a url at all", () => {
+    process.env.CLAUDE_WINDOW_PING_URL = "hc-ping.com/abc";
+    expect(() => loadConfig()).toThrow("CLAUDE_WINDOW_PING_URL");
   });
 
   it("rejects an end hour that precedes the start", () => {
