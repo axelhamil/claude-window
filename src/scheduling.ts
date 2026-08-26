@@ -4,6 +4,19 @@ import type { RateLimitWindow } from "./window.js";
 export const MIN_SLEEP_SECONDS = 60;
 export const RETRY_SECONDS = 300;
 export const GRID_TOLERANCE_SECONDS = 900;
+export const BACKOFF_BASE_SECONDS = 60;
+export const BACKOFF_CAP_SECONDS = 1800;
+
+export function backoffSeconds(
+  attempt: number,
+  retryAfterSeconds: number | null,
+  random: () => number = Math.random,
+): number {
+  const ceiling = Math.min(BACKOFF_CAP_SECONDS, BACKOFF_BASE_SECONDS * 2 ** attempt);
+  const jittered = Math.round(random() * ceiling);
+  const backoff = Math.max(MIN_SLEEP_SECONDS, jittered);
+  return Math.max(backoff, retryAfterSeconds ?? 0);
+}
 
 export function clock(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleTimeString([], {

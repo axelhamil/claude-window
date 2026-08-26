@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Config } from "../src/config.js";
 import {
+  backoffSeconds,
+  BACKOFF_BASE_SECONDS,
+  BACKOFF_CAP_SECONDS,
   clock,
   driftSeconds,
   GRID_TOLERANCE_SECONDS,
+  MIN_SLEEP_SECONDS,
   nextStartOfDay,
   onGrid,
   secondsUntilNextProbe,
@@ -154,5 +158,39 @@ describe("onGrid", () => {
 
   it("rejects a reset that drifted early past the tolerance", () => {
     expect(onGrid(epoch(11, 20), config)).toBe(false);
+  });
+});
+
+describe("backoffSeconds", () => {
+  const always = (value: number) => () => value;
+
+  it("never sleeps less than the floor", () => {
+    expect(backoffSeconds(1, null, always(0))).toBe(MIN_SLEEP_SECONDS);
+  });
+
+  it("spreads the first attempt over the base delay", () => {
+    expect(backoffSeconds(1, null, always(1))).toBe(BACKOFF_BASE_SECONDS * 2);
+  });
+
+  it("doubles the ceiling on every attempt", () => {
+    expect(backoffSeconds(3, null, always(1))).toBe(BACKOFF_BASE_SECONDS * 8);
+  });
+
+  it("stops growing at the cap", () => {
+    expect(backoffSeconds(20, null, always(1))).toBe(BACKOFF_CAP_SECONDS);
+  });
+
+  it("jitters between the floor and the ceiling", () => {
+    const value = backoffSeconds(4, null, always(0.5));
+    expect(value).toBeGreaterThanOrEqual(MIN_SLEEP_SECONDS);
+    expect(value).toBeLessThanOrEqual(BACKOFF_CAP_SECONDS);
+  });
+
+  it("obeys Retry-After when it asks for longer", () => {
+    expect(backoffSeconds(1, 3600, always(0))).toBe(3600);
+  });
+
+  it("ignores Retry-After when the backoff already waits longer", () => {
+    expect(backoffSeconds(20, 10, always(1))).toBe(BACKOFF_CAP_SECONDS);
   });
 });
