@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,5 +43,30 @@ describe("systemdManager.install", () => {
 
   it("still restarts on ordinary failures", () => {
     expect(install()).toContain("Restart=always");
+  });
+});
+
+describe("systemdManager.status", () => {
+  afterEach(() => {
+    vi.mocked(execFileSync).mockReset();
+    vi.mocked(execFileSync).mockImplementation(() => "active");
+  });
+
+  it("returns the failed unit's stdout when systemctl exits non-zero", () => {
+    vi.mocked(execFileSync).mockImplementationOnce(() => {
+      const error = new Error("Command failed") as NodeJS.ErrnoException & { stdout?: string };
+      error.stdout = "failed\n";
+      throw error;
+    });
+    const manager = systemdManager("/usr/bin/node", ["/opt/claude-window/cli.js", "daemon"]);
+    expect(manager.status()).toBe("failed");
+  });
+
+  it("falls back to inactive when the failure carries no usable stdout", () => {
+    vi.mocked(execFileSync).mockImplementationOnce(() => {
+      throw new Error("systemctl: command not found");
+    });
+    const manager = systemdManager("/usr/bin/node", ["/opt/claude-window/cli.js", "daemon"]);
+    expect(manager.status()).toBe("inactive");
   });
 });

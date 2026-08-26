@@ -70,8 +70,10 @@ export function systemdManager(executable: string, args: string[]): ServiceManag
     status() {
       try {
         return systemctl("is-active", UNIT);
-      } catch {
-        return "inactive";
+      } catch (error) {
+        const stdout = (error as NodeJS.ErrnoException & { stdout?: unknown }).stdout;
+        const trimmed = typeof stdout === "string" ? stdout.trim() : "";
+        return trimmed !== "" ? trimmed : "inactive";
       }
     },
   };
