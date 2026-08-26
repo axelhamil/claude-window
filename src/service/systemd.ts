@@ -28,6 +28,8 @@ export function systemdManager(executable: string, args: string[]): ServiceManag
           "[Unit]",
           "Description=Pin the Claude Code 5h rate-limit window",
           "After=network-online.target",
+          "StartLimitIntervalSec=3600",
+          "StartLimitBurst=3",
           "",
           "[Service]",
           "Type=simple",
