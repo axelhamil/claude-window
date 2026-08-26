@@ -82,7 +82,11 @@ export async function fetchWindow(token: string, model: string): Promise<RateLim
 
   const resetAt = Number(response.headers.get(HEADER.resetAt));
   if (!Number.isInteger(resetAt) || resetAt <= 0) {
-    throw new ProbeError(`missing rate-limit headers on a HTTP ${response.status} response`, false);
+    throw new ProbeError(
+      `missing rate-limit headers on a HTTP ${response.status} response`,
+      false,
+      parseRetryAfter(response.headers.get("retry-after")),
+    );
   }
 
   return {

@@ -165,4 +165,15 @@ describe("fetchWindow failures", () => {
     );
     await expect(fetchWindow("sk-ant-oat-x", "model")).rejects.toMatchObject({ fatal: false });
   });
+
+  it("carries Retry-After even when a 429 lacks reset headers", async () => {
+    const response = new Response("", { status: 429, headers: { "retry-after": "900" } });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response),
+    );
+    await expect(fetchWindow("sk-ant-oat-x", "model")).rejects.toMatchObject({
+      retryAfterSeconds: 900,
+    });
+  });
 });
