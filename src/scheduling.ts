@@ -2,7 +2,6 @@ import type { Config } from "./config.js";
 import type { RateLimitWindow } from "./window.js";
 
 export const MIN_SLEEP_SECONDS = 60;
-export const RETRY_SECONDS = 300;
 export const GRID_TOLERANCE_SECONDS = 900;
 export const BACKOFF_BASE_SECONDS = 60;
 export const BACKOFF_CAP_SECONDS = 1800;

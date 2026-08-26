@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.js";
 import { anchor, type DaemonPorts, runDaemon } from "../src/daemon.js";
-import type { RateLimitWindow } from "../src/window.js";
+import { ProbeError, type RateLimitWindow } from "../src/window.js";
 
 const config: Config = {
   startHour: 7,
@@ -24,6 +24,9 @@ function ports(overrides: Partial<DaemonPorts> = {}): DaemonPorts & { messages: 
     },
     wait: vi.fn(async () => undefined),
     nowSeconds: () => window.resetAt - 3600,
+    record: vi.fn(),
+    ping: vi.fn(async () => null),
+    random: () => 1,
     ...overrides,
   };
 }
@@ -38,7 +41,9 @@ describe("anchor", () => {
   it("reports the window boundaries and usage", async () => {
     const p = ports();
     await anchor("sk-ant-oat01-x", config, p);
-    expect(p.messages[0]).toMatch(/^anchored \d{2}:\d{2}->\d{2}:\d{2} usage5=0.34 usage7=0.03$/);
+    expect(p.messages[0]).toMatch(
+      /^anchored \d{2}:\d{2}->\d{2}:\d{2} usage5=0.34 usage7=0.03 drift=-?\d+s$/,
+    );
   });
 
   it("lets a probe failure bubble up so the caller can retry", async () => {
@@ -52,25 +57,25 @@ describe("anchor", () => {
   });
 });
 
-describe("runDaemon", () => {
-  function abortAfter(calls: number): { signal: AbortSignal; controller: AbortController } {
-    const controller = new AbortController();
-    let seen = 0;
-    return {
-      controller,
-      signal: new Proxy(controller.signal, {
-        get(target, key, receiver) {
-          if (key === "aborted") {
-            if (seen >= calls) return true;
-            seen += 1;
-            return false;
-          }
-          return Reflect.get(target, key, receiver);
-        },
-      }),
-    };
-  }
+function abortAfter(calls: number): { signal: AbortSignal; controller: AbortController } {
+  const controller = new AbortController();
+  let seen = 0;
+  return {
+    controller,
+    signal: new Proxy(controller.signal, {
+      get(target, key, receiver) {
+        if (key === "aborted") {
+          if (seen >= calls) return true;
+          seen += 1;
+          return false;
+        }
+        return Reflect.get(target, key, receiver);
+      },
+    }),
+  };
+}
 
+describe("runDaemon", () => {
   it("stops immediately when the signal is already aborted", async () => {
     const controller = new AbortController();
     controller.abort();
@@ -96,7 +101,7 @@ describe("runDaemon", () => {
     });
     await runDaemon("t", config, signal, p);
     expect(p.messages).toContain("probe failed: network down");
-    expect(p.wait).toHaveBeenCalledWith(300, signal);
+    expect(p.wait).toHaveBeenCalledWith(120, signal);
   });
 
   it("never probes outside the active hours", async () => {
@@ -117,5 +122,82 @@ describe("runDaemon", () => {
     });
     await runDaemon("t", config, signal, p);
     expect(p.messages).toContain("probe failed: socket hang up");
+  });
+});
+
+describe("runDaemon history and resilience", () => {
+  it("records every anchor with its drift", async () => {
+    const { signal } = abortAfter(1);
+    const port = ports();
+    await runDaemon("token", config, signal, port);
+    expect(port.record).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "anchor", resetAt: window.resetAt }),
+    );
+  });
+
+  it("records a transient failure without stopping", async () => {
+    const { signal } = abortAfter(1);
+    const port = ports({
+      probe: vi.fn(async () => {
+        throw new ProbeError("probe rejected with HTTP 503", false);
+      }),
+    });
+    await runDaemon("token", config, signal, port);
+    expect(port.record).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "failure", fatal: false }),
+    );
+  });
+
+  it("stops on a fatal failure instead of retrying forever", async () => {
+    const controller = new AbortController();
+    const port = ports({
+      probe: vi.fn(async () => {
+        throw new ProbeError("probe rejected with HTTP 401", true);
+      }),
+    });
+    await expect(runDaemon("token", config, controller.signal, port)).rejects.toThrow("401");
+    expect(port.record).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "failure", fatal: true }),
+    );
+  });
+
+  it("pings the heartbeat after a successful anchor", async () => {
+    const { signal } = abortAfter(1);
+    const port = ports();
+    await runDaemon("token", config, signal, port);
+    expect(port.ping).toHaveBeenCalledWith("success");
+  });
+
+  it("pings the failure endpoint when the probe fails", async () => {
+    const { signal } = abortAfter(1);
+    const port = ports({
+      probe: vi.fn(async () => {
+        throw new ProbeError("probe rejected with HTTP 503", false);
+      }),
+    });
+    await runDaemon("token", config, signal, port);
+    expect(port.ping).toHaveBeenCalledWith("fail");
+  });
+
+  it("reports a broken heartbeat but keeps anchoring", async () => {
+    const { signal } = abortAfter(1);
+    const port = ports({ ping: vi.fn(async () => "heartbeat ping failed: down") });
+    await runDaemon("token", config, signal, port);
+    expect(port.messages.some((message) => message.includes("heartbeat"))).toBe(true);
+  });
+
+  it("backs off further on each consecutive failure", async () => {
+    const { signal } = abortAfter(3);
+    const waits: number[] = [];
+    const port = ports({
+      probe: vi.fn(async () => {
+        throw new ProbeError("probe rejected with HTTP 503", false);
+      }),
+      wait: vi.fn(async (seconds: number) => {
+        waits.push(seconds);
+      }),
+    });
+    await runDaemon("token", config, signal, port);
+    expect(waits[1]).toBeGreaterThan(waits[0] ?? 0);
   });
 });

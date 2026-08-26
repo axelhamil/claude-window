@@ -2,7 +2,7 @@
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import pkg from "../package.json" with { type: "json" };
 import { loadConfig, loadToken } from "./config.js";
-import { anchor, runDaemon } from "./daemon.js";
+import { anchor, createPorts, runDaemon } from "./daemon.js";
 import { configDir, stateFile, tokenFile } from "./paths.js";
 import { clock } from "./scheduling.js";
 import { serviceManager } from "./service/manager.js";
@@ -78,16 +78,19 @@ async function main(argv: string[]): Promise<number> {
       showStatus();
       return 0;
 
-    case "once":
-      await anchor(loadToken(), loadConfig());
+    case "once": {
+      const config = loadConfig();
+      await anchor(loadToken(), config, createPorts(config));
       return 0;
+    }
 
     case "daemon": {
+      const config = loadConfig();
       const controller = new AbortController();
       for (const signal of ["SIGINT", "SIGTERM"] as const) {
         process.on(signal, () => controller.abort());
       }
-      await runDaemon(loadToken(), loadConfig(), controller.signal);
+      await runDaemon(loadToken(), config, controller.signal, createPorts(config));
       return 0;
     }
 
