@@ -17,6 +17,7 @@ export interface WorkPlan extends DayPlan {
   resets: number[];
   freshWindows: number;
   clamped: boolean;
+  partial: boolean;
 }
 
 const OFF = new Set(["off", "none", "no", ""]);
@@ -59,10 +60,18 @@ function resetsInside(anchorMinute: number, range: Range): number[] {
   return resets;
 }
 
-export function planDay(range: Range): WorkPlan {
-  const duration = range.end - range.start;
+// Each hop of the chain lands `offset` late, and the window opened on the last reset must
+// close before the next morning's anchor: (resets + 1) hops have to fit inside one day.
+export function maxResets(offsetSeconds: number): number {
+  const hop = WINDOW_MINUTES + offsetSeconds / 60;
+  return Math.max(0, Math.ceil(MINUTES_PER_DAY / hop) - 2);
+}
 
-  let resetCount = Math.ceil(duration / WINDOW_MINUTES);
+export function planDay(range: Range, offsetSeconds: number): WorkPlan {
+  const duration = range.end - range.start;
+  const offsetMinutes = offsetSeconds / 60;
+
+  let resetCount = Math.min(Math.ceil(duration / WINDOW_MINUTES), maxResets(offsetSeconds));
   let edge = (duration - WINDOW_MINUTES * (resetCount - 1)) / 2;
   while (resetCount > 1 && edge < MIN_EDGE_MINUTES) {
     resetCount -= 1;
@@ -71,10 +80,14 @@ export function planDay(range: Range): WorkPlan {
 
   const ideal = Math.round(range.start + edge) - WINDOW_MINUTES;
   const anchorMinute = Math.max(0, ideal);
-  const resets = resetsInside(anchorMinute, range);
+  const resets = resetsInside(anchorMinute, range).slice(0, Math.max(0, resetCount));
 
   const lastOpening = resets.at(-1) ?? anchorMinute;
-  const activeUntilMinute = Math.min(MINUTES_PER_DAY, lastOpening + ACTIVE_SLACK_MINUTES);
+  const lateness = Math.ceil(resets.length * offsetMinutes);
+  const activeUntilMinute = Math.min(
+    MINUTES_PER_DAY,
+    lastOpening + lateness + ACTIVE_SLACK_MINUTES,
+  );
 
   return {
     anchorMinute,
@@ -82,6 +95,7 @@ export function planDay(range: Range): WorkPlan {
     resets,
     freshWindows: resets.length + 1,
     clamped: anchorMinute !== ideal,
+    partial: anchorMinute > range.start || lastOpening + WINDOW_MINUTES < range.end,
   };
 }
 
@@ -95,14 +109,12 @@ export function formatRange(range: Range): string {
   return `${formatMinutes(range.start)}-${formatMinutes(range.end)}`;
 }
 
-export function describePlan(range: Range | null): string {
+export function describePlan(range: Range | null, offsetSeconds: number): string {
   if (range === null) return "off";
 
-  const plan = planDay(range);
+  const plan = planDay(range, offsetSeconds);
   const resets = plan.resets.map(formatMinutes).join(", ");
   const resetPart = resets === "" ? "" : `, resets ${resets}`;
-  return (
-    `${formatRange(range)} -> anchor ${formatMinutes(plan.anchorMinute)}${resetPart}, ` +
-    `${plan.freshWindows} fresh windows`
-  );
+  const windows = plan.freshWindows === 1 ? "1 fresh window" : `${plan.freshWindows} fresh windows`;
+  return `${formatRange(range)} -> anchor ${formatMinutes(plan.anchorMinute)}${resetPart}, ${windows}`;
 }

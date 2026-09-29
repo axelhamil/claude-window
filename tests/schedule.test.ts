@@ -1,8 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadSchedule, saveSchedule, validateSchedule } from "../src/schedule.js";
+import { loadSchedule, saveSchedule, scheduleFromArgs, validateSchedule } from "../src/schedule.js";
 
 let dir: string;
 let path: string;
@@ -76,5 +76,73 @@ describe("validateSchedule", () => {
   it("lets a weekend-only schedule through", () => {
     const weekendOnly = { weekdays: null, weekend: { start: 600, end: 1080 } };
     expect(validateSchedule(weekendOnly)).toBe(weekendOnly);
+  });
+});
+
+describe("saveSchedule on failure", () => {
+  it("leaves no temporary file behind when the rename fails", () => {
+    const occupied = join(dir, "schedule.json");
+    mkdirSync(join(occupied, "child"), { recursive: true });
+
+    expect(() => saveSchedule(schedule, occupied)).toThrow();
+    expect(readdirSync(dir)).toEqual(["schedule.json"]);
+  });
+});
+
+describe("loadSchedule shapes", () => {
+  it("rejects a json array", () => {
+    const file = join(dir, "schedule.json");
+    writeFileSync(file, "[]", "utf8");
+    expect(() => loadSchedule(file)).toThrow("is invalid");
+  });
+});
+
+describe("scheduleFromArgs", () => {
+  const weekend = { start: 600, end: 1080 };
+  const current = { weekdays: { start: 480, end: 960 }, weekend };
+
+  it("returns null without arguments, so the wizard can ask", () => {
+    expect(scheduleFromArgs([], current)).toBeNull();
+  });
+
+  it("reads both flags", () => {
+    expect(scheduleFromArgs(["--weekdays", "9-17", "--weekend", "off"], current)).toEqual(schedule);
+  });
+
+  it("keeps the current weekend when only the weekdays change", () => {
+    expect(scheduleFromArgs(["--weekdays", "9-17"], current)).toEqual({
+      weekdays: schedule.weekdays,
+      weekend,
+    });
+  });
+
+  it("keeps the current weekdays when only the weekend changes", () => {
+    expect(scheduleFromArgs(["--weekend", "off"], current)).toEqual({
+      weekdays: current.weekdays,
+      weekend: null,
+    });
+  });
+
+  it("treats the missing side as off when nothing was scheduled yet", () => {
+    expect(scheduleFromArgs(["--weekdays", "9-17"], null)).toEqual(schedule);
+  });
+
+  it("rejects a flag without a value", () => {
+    expect(() => scheduleFromArgs(["--weekdays"], null)).toThrow("--weekdays expects a value");
+    expect(() => scheduleFromArgs(["--weekdays", "--weekend", "off"], null)).toThrow(
+      "--weekdays expects a value",
+    );
+  });
+
+  it("rejects unknown flags, the = form and bare ranges", () => {
+    expect(() => scheduleFromArgs(["--foo", "1"], null)).toThrow('unexpected argument "--foo"');
+    expect(() => scheduleFromArgs(["--weekdays=9-17"], null)).toThrow("unexpected argument");
+    expect(() => scheduleFromArgs(["9-17"], null)).toThrow("unexpected argument");
+  });
+
+  it("rejects a schedule turned entirely off", () => {
+    expect(() => scheduleFromArgs(["--weekdays", "off", "--weekend", "off"], null)).toThrow(
+      "needs working hours",
+    );
   });
 });

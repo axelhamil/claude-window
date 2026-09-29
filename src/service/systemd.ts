@@ -70,7 +70,13 @@ export function systemdManager(executable: string, args: string[]): ServiceManag
     restart() {
       if (!existsSync(unitPath())) return false;
 
-      systemctl("reset-failed", UNIT);
+      try {
+        systemctl("reset-failed", UNIT);
+      } catch (error) {
+        process.stderr.write(
+          `warning: could not clear the failed state, ${(error as Error).message}\n`,
+        );
+      }
       systemctl("restart", UNIT);
       return true;
     },

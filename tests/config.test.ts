@@ -101,7 +101,8 @@ describe("loadConfig with a schedule", () => {
 
   it("plans each day from the working hours", () => {
     const config = loadConfig(schedule);
-    expect(config.week.weekdays).toEqual(planDay(schedule.weekdays));
+    const { anchorMinute, activeUntilMinute } = planDay(schedule.weekdays, 120);
+    expect(config.week.weekdays).toEqual({ anchorMinute, activeUntilMinute });
     expect(config.week.weekend).toBeNull();
   });
 

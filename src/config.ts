@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { tokenFile } from "./paths.js";
-import { type DayPlan, planDay } from "./planner.js";
-import { loadSchedule, type Schedule } from "./schedule.js";
+import { type DayPlan, planDay, type Range } from "./planner.js";
+import type { Schedule } from "./schedule.js";
 
 export interface WeekPlan {
   weekdays: DayPlan | null;
@@ -71,27 +71,31 @@ function legacyWeek(): WeekPlan {
   return { weekdays: everyDay, weekend: everyDay };
 }
 
-function scheduledWeek(schedule: Schedule): WeekPlan {
+function dayPlan(range: Range | null, offsetSeconds: number): DayPlan | null {
+  if (range === null) return null;
+
+  const { anchorMinute, activeUntilMinute } = planDay(range, offsetSeconds);
+  return { anchorMinute, activeUntilMinute };
+}
+
+function scheduledWeek(schedule: Schedule, offsetSeconds: number): WeekPlan {
   return {
-    weekdays: schedule.weekdays && planDay(schedule.weekdays),
-    weekend: schedule.weekend && planDay(schedule.weekend),
+    weekdays: dayPlan(schedule.weekdays, offsetSeconds),
+    weekend: dayPlan(schedule.weekend, offsetSeconds),
   };
 }
 
-export function loadConfig(schedule: Schedule | null = loadSchedule()): Config {
-  const offsetSeconds = readInteger(
-    "CLAUDE_WINDOW_OFFSET",
-    process.env.CLAUDE_WINDOW_OFFSET,
-    0,
-    3600,
-  );
+export function loadConfig(schedule: Schedule | null): Config {
+  const offsetSeconds =
+    readInteger("CLAUDE_WINDOW_OFFSET", process.env.CLAUDE_WINDOW_OFFSET, 0, 3600) ??
+    DEFAULTS.offsetSeconds;
   const model = process.env.CLAUDE_WINDOW_MODEL?.trim();
   const pingUrl = readUrl("CLAUDE_WINDOW_PING_URL", process.env.CLAUDE_WINDOW_PING_URL);
 
   return {
-    week: schedule === null ? legacyWeek() : scheduledWeek(schedule),
+    week: schedule === null ? legacyWeek() : scheduledWeek(schedule, offsetSeconds),
     schedule,
-    offsetSeconds: offsetSeconds ?? DEFAULTS.offsetSeconds,
+    offsetSeconds,
     model: model || DEFAULTS.model,
     pingUrl: pingUrl ?? DEFAULTS.pingUrl,
   };

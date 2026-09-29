@@ -133,8 +133,33 @@ describe("scheduleLine", () => {
     expect(statusLines(null, service, config)[1]).toMatch(/^schedule /);
   });
 
-  it("carries the schedule in the json status", () => {
+  it("carries no schedule in the json status on the legacy environment", () => {
     expect(JSON.parse(statusJson(null, service, config)).schedule).toBeNull();
+  });
+
+  it("serialises the schedule in the same format as schedule.json", () => {
+    const office: Config = {
+      ...config,
+      schedule: { weekdays: { start: 540, end: 1020 }, weekend: null },
+    };
+    expect(JSON.parse(statusJson(null, service, office)).schedule).toEqual({
+      weekdays: "09:00-17:00",
+      weekend: null,
+    });
+  });
+
+  it("reports a broken schedule instead of failing", () => {
+    expect(statusLines(null, service, config, "schedule.json is not valid json")[1]).toBe(
+      "schedule INVALID: schedule.json is not valid json",
+    );
+    expect(JSON.parse(statusJson(null, service, config, "broken")).scheduleError).toBe("broken");
+  });
+
+  it("reports a null drift when the reset falls far from any working day", () => {
+    const idle: Config = { ...config, week: { weekdays: null, weekend: null } };
+    const parsed = JSON.parse(statusJson(snapshotAt(12, 2), service, idle));
+    expect(parsed.drift).toBeNull();
+    expect(parsed.onGrid).toBeNull();
   });
 });
 
