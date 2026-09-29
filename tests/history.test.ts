@@ -2,7 +2,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { appendRecord, HISTORY_LIMIT, type HistoryRecord, readRecords } from "../src/history.js";
+import {
+  type AnchorRecord,
+  appendRecord,
+  HISTORY_LIMIT,
+  type HistoryRecord,
+  readRecords,
+} from "../src/history.js";
 import { historyFile } from "../src/paths.js";
 
 let dir: string;
@@ -20,7 +26,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function anchorAt(at: number): HistoryRecord {
+function anchorAt(at: number): AnchorRecord {
   return { event: "anchor", at, resetAt: at + 18000, usage5h: 0.1, usage7d: 0.02, drift: 0 };
 }
 
@@ -77,5 +83,18 @@ describe("appendRecord", () => {
     expect(records).toHaveLength(HISTORY_LIMIT);
     expect(records[0]?.at).toBe(10);
     expect(records.at(-1)?.at).toBe(HISTORY_LIMIT + 9);
+  });
+});
+
+describe("anchors taken off schedule", () => {
+  it("reads back a record without drift", () => {
+    appendRecord({ ...anchorAt(1000), drift: null });
+    expect(readRecords()).toEqual([{ ...anchorAt(1000), drift: null }]);
+  });
+
+  it("skips a record whose drift is neither a number nor null", () => {
+    mkdirSync(dirname(historyFile()), { recursive: true });
+    writeFileSync(historyFile(), `${JSON.stringify({ ...anchorAt(1000), drift: "5" })}\n`, "utf8");
+    expect(readRecords()).toEqual([]);
   });
 });

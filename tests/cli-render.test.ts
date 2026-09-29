@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Config } from "../src/config.js";
 import type { HistoryRecord } from "../src/history.js";
-import { historyLines, statusJson, statusLines } from "../src/render.js";
+import { historyLines, scheduleLine, statusJson, statusLines } from "../src/render.js";
 import type { Snapshot } from "../src/state.js";
 
+const everyDay = { anchorMinute: 7 * 60, activeUntilMinute: 23 * 60 };
+
 const config: Config = {
-  startHour: 7,
-  endHour: 23,
+  week: { weekdays: everyDay, weekend: everyDay },
+  schedule: null,
   offsetSeconds: 120,
   model: "claude-haiku-4-5-20251001",
   pingUrl: null,
@@ -106,5 +108,71 @@ describe("historyLines", () => {
       },
     ];
     expect(historyLines(drifted, wideOffset)[0]).toContain("on grid");
+  });
+});
+
+describe("scheduleLine", () => {
+  it("describes the legacy environment schedule", () => {
+    expect(scheduleLine(config)).toBe(
+      "schedule (environment) every day: anchor 07:00, active until 23:00",
+    );
+  });
+
+  it("describes working hours with their anchor and fresh windows", () => {
+    const office: Config = {
+      ...config,
+      schedule: { weekdays: { start: 540, end: 1020 }, weekend: null },
+    };
+    expect(scheduleLine(office)).toBe(
+      "schedule weekdays 09:00-17:00 -> anchor 05:30, resets 10:30, 15:30, 3 fresh windows" +
+        " | weekend off",
+    );
+  });
+
+  it("appears in the status output", () => {
+    expect(statusLines(null, service, config)[1]).toMatch(/^schedule /);
+  });
+
+  it("carries no schedule in the json status on the legacy environment", () => {
+    expect(JSON.parse(statusJson(null, service, config)).schedule).toBeNull();
+  });
+
+  it("serialises the schedule in the same format as schedule.json", () => {
+    const office: Config = {
+      ...config,
+      schedule: { weekdays: { start: 540, end: 1020 }, weekend: null },
+    };
+    expect(JSON.parse(statusJson(null, service, office)).schedule).toEqual({
+      weekdays: "09:00-17:00",
+      weekend: null,
+    });
+  });
+
+  it("reports a broken schedule instead of failing", () => {
+    expect(statusLines(null, service, config, "schedule.json is not valid json")[1]).toBe(
+      "schedule INVALID: schedule.json is not valid json",
+    );
+    expect(JSON.parse(statusJson(null, service, config, "broken")).scheduleError).toBe("broken");
+  });
+
+  it("reports a null drift when the reset falls far from any working day", () => {
+    const idle: Config = { ...config, week: { weekdays: null, weekend: null } };
+    const parsed = JSON.parse(statusJson(snapshotAt(12, 2), service, idle));
+    expect(parsed.drift).toBeNull();
+    expect(parsed.onGrid).toBeNull();
+  });
+});
+
+describe("historyLines off schedule", () => {
+  it("labels an anchor taken on a day without working hours", () => {
+    const record: HistoryRecord = {
+      event: "anchor",
+      at: snapshotAt(12, 2).probedAt,
+      resetAt: snapshotAt(12, 2).resetAt,
+      usage5h: 0,
+      usage7d: 0,
+      drift: null,
+    };
+    expect(historyLines([record], config)[0]).toMatch(/off schedule$/);
   });
 });

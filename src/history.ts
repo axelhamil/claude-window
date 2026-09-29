@@ -10,7 +10,7 @@ export interface AnchorRecord {
   resetAt: number;
   usage5h: number;
   usage7d: number;
-  drift: number;
+  drift: number | null;
 }
 
 export interface FailureRecord {
@@ -32,7 +32,7 @@ function isRecord(value: unknown): value is HistoryRecord {
       Number.isInteger(candidate.resetAt) &&
       typeof candidate.usage5h === "number" &&
       typeof candidate.usage7d === "number" &&
-      typeof candidate.drift === "number"
+      (typeof candidate.drift === "number" || candidate.drift === null)
     );
   }
   return (

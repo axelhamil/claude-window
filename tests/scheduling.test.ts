@@ -11,13 +11,16 @@ import {
   MIN_SLEEP_SECONDS,
   nextStartOfDay,
   onGrid,
+  planFor,
   secondsUntilNextProbe,
   withinActiveHours,
 } from "../src/scheduling.js";
 
+const everyDay = { anchorMinute: 7 * 60, activeUntilMinute: 23 * 60 };
+
 const config: Config = {
-  startHour: 7,
-  endHour: 23,
+  week: { weekdays: everyDay, weekend: everyDay },
+  schedule: null,
   offsetSeconds: 120,
   model: "claude-haiku-4-5-20251001",
   pingUrl: null,
@@ -58,20 +61,71 @@ describe("withinActiveHours", () => {
 
 describe("nextStartOfDay", () => {
   it("targets today when the anchor is still ahead", () => {
-    const target = new Date(nextStartOfDay(7, at(3)) * 1000);
+    const target = new Date(nextStartOfDay(config, at(3)) * 1000);
     expect(target.getDate()).toBe(14);
     expect(target.getHours()).toBe(7);
   });
 
   it("rolls over to tomorrow once the anchor has passed", () => {
-    const target = new Date(nextStartOfDay(7, at(18)) * 1000);
+    const target = new Date(nextStartOfDay(config, at(18)) * 1000);
     expect(target.getDate()).toBe(15);
     expect(target.getHours()).toBe(7);
   });
 
   it("rolls over when called exactly on the anchor", () => {
-    const target = new Date(nextStartOfDay(7, at(7)) * 1000);
+    const target = new Date(nextStartOfDay(config, at(7)) * 1000);
     expect(target.getDate()).toBe(15);
+  });
+});
+
+describe("with working hours on weekdays only", () => {
+  const workday = { anchorMinute: 5 * 60 + 30, activeUntilMinute: 17 * 60 };
+  const office: Config = { ...config, week: { weekdays: workday, weekend: null } };
+  const saturday = new Date(2026, 7, 15, 10, 0, 0, 0);
+
+  it("uses the weekday plan on a friday and none on a saturday", () => {
+    expect(planFor(office, at(10))).toBe(workday);
+    expect(planFor(office, saturday)).toBeNull();
+  });
+
+  it("anchors at the planned minute", () => {
+    const target = new Date(nextStartOfDay(office, at(3)) * 1000);
+    expect(target.getHours()).toBe(5);
+    expect(target.getMinutes()).toBe(30);
+  });
+
+  it("sleeps through the weekend from friday evening to monday morning", () => {
+    const target = new Date(nextStartOfDay(office, at(18)) * 1000);
+    expect(target.getDay()).toBe(1);
+    expect(target.getDate()).toBe(17);
+    expect(target.getHours()).toBe(5);
+    expect(target.getMinutes()).toBe(30);
+  });
+
+  it("is never active on a day off", () => {
+    expect(withinActiveHours(office, saturday)).toBe(false);
+  });
+
+  it("stops being active once the last planned reset has been opened", () => {
+    expect(withinActiveHours(office, at(16, 59))).toBe(true);
+    expect(withinActiveHours(office, at(17))).toBe(false);
+  });
+
+  it("measures drift against the minute-level anchor", () => {
+    expect(driftSeconds(epoch(10, 30), office)).toBe(0);
+    expect(driftSeconds(epoch(15, 34), office)).toBe(240);
+  });
+
+  it("has no grid when no nearby day has working hours", () => {
+    const weekendOnly: Config = { ...config, week: { weekdays: null, weekend: workday } };
+    const wednesday = Math.floor(new Date(2026, 7, 19, 12, 0, 0, 0).getTime() / 1000);
+    expect(driftSeconds(wednesday, weekendOnly)).toBeNull();
+    expect(onGrid(wednesday, weekendOnly)).toBeNull();
+  });
+
+  it("refuses to plan a week without any working day", () => {
+    const never: Config = { ...config, week: { weekdays: null, weekend: null } };
+    expect(() => nextStartOfDay(never, at(3))).toThrow("no active day");
   });
 });
 
@@ -136,7 +190,8 @@ describe("driftSeconds", () => {
   });
 
   it("follows the configured start hour", () => {
-    const shifted = { ...config, startHour: 9 };
+    const nine = { anchorMinute: 9 * 60, activeUntilMinute: 23 * 60 };
+    const shifted = { ...config, week: { weekdays: nine, weekend: nine } };
     expect(driftSeconds(epoch(14, 0), shifted)).toBe(0);
   });
 });

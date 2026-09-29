@@ -41,7 +41,7 @@ anthropic-ratelimit-unified-7d-utilization: 0.04
 
 So `claude-window` sends one 1-token request, reads the real reset timestamp, sleeps until exactly that moment plus a small offset, and repeats. Every window opens the instant the previous one closes — the chain never breaks, and the grid stays pinned to your anchor hour.
 
-Between probes it is a sleeping process. No polling, no cron: **4 wakeups a day**.
+Between probes it is a sleeping process. No polling, no cron: a handful of wakeups a day (four with the default 07:00-23:00 chain, three for a 9-17 schedule).
 
 ## Install
 
@@ -50,20 +50,13 @@ Needs **Node 22 or later** on a machine that stays on. Bun alone is not enough: 
 ```bash
 npm install -g claude-window
 claude-window login "$(claude setup-token)"
+claude-window schedule --weekdays 9-17 --weekend off
 claude-window install
 ```
 
-Expect around 85 MB of resident memory under Node.
+Expect around 85 MB of resident memory under Node. On a memory-tight host the daemon can run under Bun instead (about 48 MB): see [Getting started](docs/getting-started.md#running-under-bun-on-memory-tight-hosts).
 
-On a memory-tight host, run the installed package under Bun instead and you drop to about 48 MB. Install through npm as usual, then register the service with Bun so the generated unit points at it:
-
-```bash
-bun "$(npm root -g)/claude-window/dist/cli.js" install
-```
-
-`npm update -g claude-window` keeps working, and the daemon keeps running under Bun. Measured on a Raspberry Pi Zero 2 W: 84 MB under Node, 47 MB under Bun, out of 464 MB total shared with Pi-hole.
-
-`install` registers a background service using whatever your OS provides:
+`install` registers a background service using whatever your OS provides, and all three restart the daemon if it dies and start it at boot or logon:
 
 | Platform | Mechanism | Registered as |
 |---|---|---|
@@ -71,116 +64,55 @@ bun "$(npm root -g)/claude-window/dist/cli.js" install
 | macOS | launchd LaunchAgent | `~/Library/LaunchAgents/com.axelhamil.claude-window.plist` |
 | Windows | Task Scheduler, logon trigger | task `claude-window` |
 
-All three restart the daemon if it dies and start it at boot or logon.
-
 ## Usage
 
 ```bash
+claude-window schedule                  # set your working hours, asks interactively
 claude-window status                    # service state + last known window, costs nothing
 claude-window history                   # replay past anchors and failures
-claude-window history --limit 50        # show more (or fewer) than the default 20 lines
-claude-window history --json            # one JSON object per line, from history.jsonl
 claude-window once                      # probe now and exit
 claude-window daemon                    # run in the foreground
 claude-window uninstall
 ```
 
 ```
+$ claude-window status
 service (systemd): active
-window -> reset 20:30 (in 236 min)
-usage 5h 0.79 | 7d 0.08
+schedule weekdays 09:00-17:00 -> anchor 05:30, resets 10:30, 15:30, 3 fresh windows | weekend off
+window -> reset 15:30 (in 211 min), on grid
+usage 5h 0.34 | 7d 0.03
 ```
 
-### Checking that it works
+`schedule` takes your working hours and computes the anchor that gives the most fresh windows inside them. A 9-17 day gets three fresh windows instead of two: the daemon opens one at 05:30, still fresh when you sit down at 9, then chains at 10:30 and 15:30 and stops after the last reset. `status` says whether the window sits on the grid it is supposed to, and `history` replays what the daemon did (`--limit <n>`, `--json` on both commands where applicable). Set `CLAUDE_WINDOW_PING_URL` to a healthchecks.io or Better Stack URL to be alerted when the daemon dies.
 
-`claude-window status` now says whether the window sits on the grid it is supposed to:
+## Documentation
 
-    service (systemd): active
-    window -> reset 22:02 (in 184 min), on grid
-    usage 5h 0.34 | 7d 0.03
+| Page | Contents |
+|---|---|
+| [Getting started](docs/getting-started.md) | Requirements, install, login, first schedule, running under Bun |
+| [Scheduling](docs/scheduling.md) | The window model, the anchor algorithm, worked examples, weekdays vs weekend, drift |
+| [CLI reference](docs/cli.md) | Every command and flag with real output |
+| [Configuration](docs/configuration.md) | `schedule.json`, environment variables, precedence, file locations, token, heartbeat |
+| [Architecture](docs/architecture.md) | Modules, daemon loop, backoff, status classification, service backends |
+| [Operations](docs/operations.md) | Status and history, logs, token expiry, upgrading (re-run `install` after upgrading), troubleshooting |
+| [Development](docs/development.md) | Setup, tests, `pnpm analyze` (measure it on your own data), release flow |
 
-`claude-window history` replays what the daemon has done, from `history.jsonl` in your state
-directory — 500 records, oldest dropped first, each line dated so a run spanning several days
-stays readable:
-
-    08-14 07:02  anchor   reset 12:02  usage5=0  on grid
-    08-14 12:02  anchor   reset 17:02  usage5=0.34  on grid
-    08-14 17:04  failure  probe rejected with HTTP 503
-
-`--limit <n>` controls how many lines to show (default 20). Both commands also take `--json`:
-`status --json` prints one versioned object, `history --json` prints one object per line, taken
-straight from `history.jsonl`. Diagnostics go to stderr, so piping into `jq` is always safe.
-
-### Knowing when it dies
-
-Set `CLAUDE_WINDOW_PING_URL` to a healthchecks.io or Better Stack heartbeat URL. The daemon
-pings it after every anchor and pings `<url>/fail` when a probe fails, so a dead daemon raises
-an alert instead of quietly not anchoring. A monitoring outage never interrupts anchoring.
-
-### When the token expires
-
-An expired or revoked token is fatal, not transient: the daemon says so and exits instead of
-retrying every five minutes forever. On Linux the unit gives up after three such exits in an
-hour and shows as `failed`. Refresh with `claude-window login "$(claude setup-token)"`.
-
-### Upgrading from before 0.5.0
-
-The `StartLimitIntervalSec`/`StartLimitBurst` guard above only exists in unit files written by
-`claude-window install`. `npm update -g claude-window` updates the binary but never touches
-`~/.config/systemd/user/claude-window.service`, so an existing install keeps the old unit and
-restart-loops every 60s forever on a fatal token error instead of giving up. Re-run
-`claude-window install` after upgrading to regenerate the unit — it is idempotent and safe to
-run again.
-
-## Configuration
-
-Environment variables, read at daemon start:
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `CLAUDE_WINDOW_START` | `7` | Hour the daily anchor fires |
-| `CLAUDE_WINDOW_END` | `23` | Stop re-anchoring after this hour |
-| `CLAUDE_WINDOW_OFFSET` | `120` | Seconds to wait past a reset before probing |
-| `CLAUDE_WINDOW_MODEL` | `claude-haiku-4-5-20251001` | Model used for the probe |
-| `CLAUDE_WINDOW_PING_URL` | _(none)_ | Heartbeat URL pinged after each anchor, `<url>/fail` on failure |
-
-Pick `CLAUDE_WINDOW_START` by counting back from the reset you want, in 5-hour steps. Want a fresh window at 22:00? Anchor at **07:00** (07 → 12 → 17 → 22).
-
-## Measure it on your own data
-
-Before trusting any of this, run the numbers against your own history:
-
-```bash
-git clone https://github.com/axelhamil/claude-window
-cd claude-window && pnpm install
-pnpm analyze
-```
-
-It reads `~/.claude/history.jsonl` locally, sends nothing anywhere, and replays your days under three strategies. On my own 137 days:
-
-| Strategy | Useful windows | Gain |
-|---|---|---|
-| Do nothing | 296 | reference |
-| Single 7am ping | 315 | +6 % |
-| Ping on every expiry | 359 | +21 % |
-
-A window counts as useful only if a prompt was actually sent inside it. Chaining improved 62 of my 137 days. Your mileage depends entirely on when you work, which is exactly why you should measure rather than believe the table above.
-
-`history.jsonl` survives the ~30 day pruning applied to transcripts, so it usually covers far more days than `~/.claude/projects`.
+Environment variables (`CLAUDE_WINDOW_OFFSET`, `CLAUDE_WINDOW_MODEL`, `CLAUDE_WINDOW_PING_URL`, and the legacy `CLAUDE_WINDOW_START` / `CLAUDE_WINDOW_END`) are listed with defaults and ranges in [Configuration](docs/configuration.md#environment-variables). An expired or revoked token is fatal, not transient: the daemon exits instead of retrying forever, and refreshing it is `claude-window login "$(claude setup-token)"` ([Operations](docs/operations.md#token-expiry-and-refresh)).
 
 ## Honest limitations
 
-- **It cannot move a window that is already open.** If you are typing at 06:55, the 07:00 anchor lands inside a live window and does nothing. The grid only holds if you are idle at your anchor hour.
-- **Late nights break the chain.** The daemon stops at `CLAUDE_WINDOW_END`, so a 22:00–03:00 window expires unattended. Code at 03:15 and you open 03:00–08:00, shifting the grid by an hour. 24 is not divisible by 5, so no schedule loops cleanly across a day.
+- **It cannot move a window that is already open.** If you are typing at 05:25, the 05:30 anchor lands inside a live window and does nothing. The grid only holds if you are idle at your anchor time.
+- **Late nights break the chain.** Code past midnight and the window you open can still be live at the next morning's anchor, which then lands inside it and shifts your day. 24 is not divisible by 5, so no schedule loops cleanly across a day.
+- **Working hours stay within one day.** A range cannot cross midnight, and a very early one (say 2-6) anchors at 00:00 instead of the evening before. A range longer than one day of chained windows can cover is capped at four fresh windows, and `schedule` warns that the edges are not covered.
 - **The headers are not a documented public API.** They are what the client already receives on every call, and they could change without notice.
 - **This does not create quota.** It moves window boundaries so fewer of them land mid-session. It does nothing for the weekly cap.
 - **Only the Linux path is verified in the wild.** The launchd and Task Scheduler backends are written to spec but untested — issues and reports welcome.
 
 ## Security
 
-The token grants full access to your Claude account. `login` writes it to your config directory with `0600`, and it never leaves your machine — which is the whole point of running this yourself instead of handing credentials to a CI cron. Rotate it with `claude setup-token` if it leaks.
+The token grants full access to your Claude account. `login` writes it to your config directory with `0600`, and it never leaves your machine, which is the whole point of running this yourself instead of handing credentials to a CI cron. Rotate it with `claude setup-token` if it leaks.
 
-Config lives in `~/.config/claude-window` (Linux), `~/Library/Application Support/claude-window` (macOS), `%APPDATA%\claude-window` (Windows).
+Config lives in `~/.config/claude-window` (Linux), `~/Library/Application Support/claude-window` (macOS), `%APPDATA%\claude-window` (Windows). State and history live in `~/.local/state/claude-window` on Linux, next to the config on macOS, and in `%LOCALAPPDATA%\claude-window` on Windows ([all locations](docs/configuration.md#file-locations)).
 
 ## License
 

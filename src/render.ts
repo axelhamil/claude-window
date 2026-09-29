@@ -1,5 +1,7 @@
 import type { Config } from "./config.js";
 import type { HistoryRecord } from "./history.js";
+import { describePlan, formatMinutes } from "./planner.js";
+import { serialiseSchedule } from "./schedule.js";
 import { clock, driftSeconds, gridTolerance, onGrid } from "./scheduling.js";
 import type { Snapshot } from "./state.js";
 
@@ -10,7 +12,8 @@ export interface ServiceView {
   status: string;
 }
 
-function describeDrift(drift: number, config: Config): string {
+function describeDrift(drift: number | null, config: Config): string {
+  if (drift === null) return "off schedule";
   if (Math.abs(drift) <= gridTolerance(config)) return "on grid";
   const minutes = Math.round(Math.abs(drift) / 60);
   return `drifted ${drift > 0 ? "+" : "-"}${minutes} min off grid`;
@@ -23,10 +26,29 @@ function dateClock(epochSeconds: number): string {
   return `${month}-${day} ${clock(epochSeconds)}`;
 }
 
+export function scheduleLine(config: Config, scheduleError: string | null = null): string {
+  if (scheduleError !== null) return `schedule INVALID: ${scheduleError}`;
+
+  if (config.schedule === null) {
+    const plan = config.week.weekdays;
+    const hours =
+      plan === null
+        ? "none"
+        : `anchor ${formatMinutes(plan.anchorMinute)}, active until ${formatMinutes(plan.activeUntilMinute)}`;
+    return `schedule (environment) every day: ${hours}`;
+  }
+
+  return (
+    `schedule weekdays ${describePlan(config.schedule.weekdays, config.offsetSeconds)} | ` +
+    `weekend ${describePlan(config.schedule.weekend, config.offsetSeconds)}`
+  );
+}
+
 export function statusJson(
   snapshot: Snapshot | null,
   service: ServiceView,
   config: Config,
+  scheduleError: string | null = null,
 ): string {
   const drift = snapshot === null ? null : driftSeconds(snapshot.resetAt, config);
   return JSON.stringify({
@@ -35,6 +57,8 @@ export function statusJson(
     window: snapshot,
     onGrid: snapshot === null ? null : onGrid(snapshot.resetAt, config),
     drift,
+    schedule: config.schedule && serialiseSchedule(config.schedule),
+    scheduleError,
   });
 }
 
@@ -42,8 +66,12 @@ export function statusLines(
   snapshot: Snapshot | null,
   service: ServiceView,
   config: Config,
+  scheduleError: string | null = null,
 ): string[] {
-  const lines = [`service (${service.name}): ${service.status}`];
+  const lines = [
+    `service (${service.name}): ${service.status}`,
+    scheduleLine(config, scheduleError),
+  ];
 
   if (snapshot === null) {
     lines.push("no probe recorded yet");

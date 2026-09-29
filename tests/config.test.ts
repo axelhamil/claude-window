@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig, loadToken } from "../src/config.js";
+import { planDay } from "../src/planner.js";
 
 const KEYS = [
   "CLAUDE_WINDOW_START",
@@ -32,9 +33,10 @@ afterEach(() => {
 
 describe("loadConfig", () => {
   it("falls back to the documented defaults", () => {
-    expect(loadConfig()).toEqual({
-      startHour: 7,
-      endHour: 23,
+    const everyDay = { anchorMinute: 7 * 60, activeUntilMinute: 23 * 60 };
+    expect(loadConfig(null)).toEqual({
+      week: { weekdays: everyDay, weekend: everyDay },
+      schedule: null,
       offsetSeconds: 120,
       model: "claude-haiku-4-5-20251001",
       pingUrl: null,
@@ -47,9 +49,10 @@ describe("loadConfig", () => {
     process.env.CLAUDE_WINDOW_OFFSET = "300";
     process.env.CLAUDE_WINDOW_MODEL = "claude-sonnet-5";
 
-    expect(loadConfig()).toEqual({
-      startHour: 9,
-      endHour: 21,
+    const everyDay = { anchorMinute: 9 * 60, activeUntilMinute: 21 * 60 };
+    expect(loadConfig(null)).toEqual({
+      week: { weekdays: everyDay, weekend: everyDay },
+      schedule: null,
       offsetSeconds: 300,
       model: "claude-sonnet-5",
       pingUrl: null,
@@ -58,38 +61,59 @@ describe("loadConfig", () => {
 
   it("has no heartbeat by default", () => {
     delete process.env.CLAUDE_WINDOW_PING_URL;
-    expect(loadConfig().pingUrl).toBeNull();
+    expect(loadConfig(null).pingUrl).toBeNull();
   });
 
   it("accepts an https heartbeat url", () => {
     process.env.CLAUDE_WINDOW_PING_URL = "https://hc-ping.com/abc";
-    expect(loadConfig().pingUrl).toBe("https://hc-ping.com/abc");
+    expect(loadConfig(null).pingUrl).toBe("https://hc-ping.com/abc");
   });
 
   it("rejects a url that is not http", () => {
     process.env.CLAUDE_WINDOW_PING_URL = "ftp://example.com/ping";
-    expect(() => loadConfig()).toThrow("CLAUDE_WINDOW_PING_URL");
+    expect(() => loadConfig(null)).toThrow("CLAUDE_WINDOW_PING_URL");
   });
 
   it("rejects something that is not a url at all", () => {
     process.env.CLAUDE_WINDOW_PING_URL = "hc-ping.com/abc";
-    expect(() => loadConfig()).toThrow("CLAUDE_WINDOW_PING_URL");
+    expect(() => loadConfig(null)).toThrow("CLAUDE_WINDOW_PING_URL");
   });
 
   it("rejects an end hour that precedes the start", () => {
     process.env.CLAUDE_WINDOW_START = "20";
     process.env.CLAUDE_WINDOW_END = "8";
-    expect(() => loadConfig()).toThrow("must be greater than");
+    expect(() => loadConfig(null)).toThrow("must be greater than");
   });
 
   it("rejects an hour outside the clock", () => {
     process.env.CLAUDE_WINDOW_START = "42";
-    expect(() => loadConfig()).toThrow("invalid configuration");
+    expect(() => loadConfig(null)).toThrow("invalid configuration");
   });
 
   it("rejects a negative offset", () => {
     process.env.CLAUDE_WINDOW_OFFSET = "-1";
-    expect(() => loadConfig()).toThrow("invalid configuration");
+    expect(() => loadConfig(null)).toThrow("invalid configuration");
+  });
+});
+
+describe("loadConfig with a schedule", () => {
+  const schedule = { weekdays: { start: 9 * 60, end: 17 * 60 }, weekend: null };
+
+  it("plans each day from the working hours", () => {
+    const config = loadConfig(schedule);
+    const { anchorMinute, activeUntilMinute } = planDay(schedule.weekdays, 120);
+    expect(config.week.weekdays).toEqual({ anchorMinute, activeUntilMinute });
+    expect(config.week.weekend).toBeNull();
+  });
+
+  it("ignores the legacy start and end hours", () => {
+    process.env.CLAUDE_WINDOW_START = "20";
+    process.env.CLAUDE_WINDOW_END = "8";
+    expect(loadConfig(schedule).week.weekdays?.anchorMinute).toBe(5 * 60 + 30);
+  });
+
+  it("keeps the schedule for display", () => {
+    expect(loadConfig(schedule).schedule).toBe(schedule);
   });
 });
 

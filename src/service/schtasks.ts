@@ -74,6 +74,22 @@ export function schtasksManager(executable: string, args: string[]): ServiceMana
       schtasks("/delete", "/tn", TASK, "/f");
     },
 
+    restart() {
+      try {
+        schtasks("/query", "/tn", TASK);
+      } catch {
+        return false;
+      }
+
+      try {
+        schtasks("/end", "/tn", TASK);
+      } catch {
+        process.stderr.write("warning: task was not running\n");
+      }
+      schtasks("/run", "/tn", TASK);
+      return true;
+    },
+
     status() {
       try {
         const output = schtasks("/query", "/tn", TASK, "/fo", "list");

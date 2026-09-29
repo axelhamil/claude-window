@@ -40,3 +40,7 @@ export function logFile(): string {
 export function historyFile(): string {
   return join(stateDir(), "history.jsonl");
 }
+
+export function scheduleFile(): string {
+  return join(configDir(), "schedule.json");
+}

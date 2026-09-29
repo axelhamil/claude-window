@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ServiceManager } from "./manager.js";
@@ -65,6 +65,20 @@ export function systemdManager(executable: string, args: string[]): ServiceManag
       }
       rmSync(unitPath(), { force: true });
       systemctl("daemon-reload");
+    },
+
+    restart() {
+      if (!existsSync(unitPath())) return false;
+
+      try {
+        systemctl("reset-failed", UNIT);
+      } catch (error) {
+        process.stderr.write(
+          `warning: could not clear the failed state, ${(error as Error).message}\n`,
+        );
+      }
+      systemctl("restart", UNIT);
+      return true;
     },
 
     status() {
