@@ -1,3 +1,10 @@
+# [0.6.0](https://github.com/axelhamil/claude-window/compare/v0.5.1...v0.6.0) (2026-09-29)
+
+
+### Features
+
+* plan the anchor from your working hours ([e5aff4a](https://github.com/axelhamil/claude-window/commit/e5aff4afe3a07917bb37038fe01d56c75b75673a))
+
 ## [0.5.1](https://github.com/axelhamil/claude-window/compare/v0.5.0...v0.5.1) (2026-09-29)
 
 
