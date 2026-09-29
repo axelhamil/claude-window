@@ -92,9 +92,10 @@ export async function anchor(
     usage7d: window.usage7d,
     drift,
   });
+  const driftLabel = drift === null ? "off schedule" : `${drift}s`;
   ports.report(
     `anchored ${clock(windowStart(window))}->${clock(window.resetAt)} ` +
-      `usage5=${window.usage5h} usage7=${window.usage7d} drift=${drift}s`,
+      `usage5=${window.usage5h} usage7=${window.usage7d} drift=${driftLabel}`,
   );
 
   await safePing(ports, "success");
@@ -113,7 +114,7 @@ export async function runDaemon(
   while (!signal.aborted) {
     const now = new Date(ports.nowSeconds() * 1000);
     if (!withinActiveHours(config, now)) {
-      const wakeAt = nextStartOfDay(config.startHour, now);
+      const wakeAt = nextStartOfDay(config, now);
       ports.report(`outside active hours, sleeping until ${clock(wakeAt)}`);
       await ports.wait(wakeAt - ports.nowSeconds(), signal);
       continue;

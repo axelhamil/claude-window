@@ -70,3 +70,28 @@ describe("systemdManager.status", () => {
     expect(manager.status()).toBe("inactive");
   });
 });
+
+describe("systemdManager.restart", () => {
+  const manager = () => systemdManager("/usr/bin/node", ["/opt/claude-window/cli.js", "daemon"]);
+
+  afterEach(() => {
+    vi.mocked(execFileSync).mockClear();
+  });
+
+  it("does nothing when the service was never installed", () => {
+    expect(manager().restart()).toBe(false);
+    expect(execFileSync).not.toHaveBeenCalled();
+  });
+
+  it("clears a failed state before restarting, so a unit that gave up comes back", () => {
+    install();
+    vi.mocked(execFileSync).mockClear();
+
+    expect(manager().restart()).toBe(true);
+    const calls = vi.mocked(execFileSync).mock.calls.map(([, args]) => args);
+    expect(calls).toEqual([
+      ["--user", "reset-failed", "claude-window.service"],
+      ["--user", "restart", "claude-window.service"],
+    ]);
+  });
+});

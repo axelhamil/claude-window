@@ -50,6 +50,7 @@ Needs **Node 22 or later** on a machine that stays on. Bun alone is not enough: 
 ```bash
 npm install -g claude-window
 claude-window login "$(claude setup-token)"
+claude-window schedule --weekdays 9-17 --weekend off
 claude-window install
 ```
 
@@ -76,6 +77,7 @@ All three restart the daemon if it dies and start it at boot or logon.
 ## Usage
 
 ```bash
+claude-window schedule                  # set your working hours, asks interactively
 claude-window status                    # service state + last known window, costs nothing
 claude-window history                   # replay past anchors and failures
 claude-window history --limit 50        # show more (or fewer) than the default 20 lines
@@ -134,17 +136,44 @@ run again.
 
 ## Configuration
 
+### Your working hours
+
+Tell it when you work and it computes the anchor for you:
+
+```bash
+claude-window schedule                                   # asks, one question per line
+claude-window schedule --weekdays 9-17 --weekend off     # same, without questions
+```
+
+```
+weekdays 09:00-17:00 -> anchor 05:30, resets 10:30, 15:30, 3 fresh windows
+weekend  off
+systemd service restarted with the new schedule
+```
+
+It places as many resets as possible strictly inside your hours, then centres them so the first
+and last windows get the same share of your day. A 9-17 day gets three fresh windows instead of
+two: the daemon opens one at 05:30, which is still fresh when you sit down at 9, then chains at
+10:30 and 15:30. After the last reset it stops chaining, so the evening window has expired before
+the next morning's anchor.
+
+Ranges accept `9-17`, `9:30-17:45`, `9h-17h30` or `off`. Weekdays are Monday to Friday; on a day
+marked `off` the daemon sleeps. The choice lands in `schedule.json` in your config directory,
+and the command restarts the service so it applies at once.
+
+### Environment
+
 Environment variables, read at daemon start:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CLAUDE_WINDOW_START` | `7` | Hour the daily anchor fires |
-| `CLAUDE_WINDOW_END` | `23` | Stop re-anchoring after this hour |
+| `CLAUDE_WINDOW_START` | `7` | Legacy, ignored once `schedule.json` exists. Hour the daily anchor fires |
+| `CLAUDE_WINDOW_END` | `23` | Legacy, ignored once `schedule.json` exists. Stop re-anchoring after this hour |
 | `CLAUDE_WINDOW_OFFSET` | `120` | Seconds to wait past a reset before probing |
 | `CLAUDE_WINDOW_MODEL` | `claude-haiku-4-5-20251001` | Model used for the probe |
 | `CLAUDE_WINDOW_PING_URL` | _(none)_ | Heartbeat URL pinged after each anchor, `<url>/fail` on failure |
 
-Pick `CLAUDE_WINDOW_START` by counting back from the reset you want, in 5-hour steps. Want a fresh window at 22:00? Anchor at **07:00** (07 → 12 → 17 → 22).
+Without a schedule, the daemon anchors at `CLAUDE_WINDOW_START` every day and keeps chaining until `CLAUDE_WINDOW_END`, as it did before `schedule` existed.
 
 ## Measure it on your own data
 
@@ -170,8 +199,9 @@ A window counts as useful only if a prompt was actually sent inside it. Chaining
 
 ## Honest limitations
 
-- **It cannot move a window that is already open.** If you are typing at 06:55, the 07:00 anchor lands inside a live window and does nothing. The grid only holds if you are idle at your anchor hour.
-- **Late nights break the chain.** The daemon stops at `CLAUDE_WINDOW_END`, so a 22:00–03:00 window expires unattended. Code at 03:15 and you open 03:00–08:00, shifting the grid by an hour. 24 is not divisible by 5, so no schedule loops cleanly across a day.
+- **It cannot move a window that is already open.** If you are typing at 05:25, the 05:30 anchor lands inside a live window and does nothing. The grid only holds if you are idle at your anchor time.
+- **Late nights break the chain.** Code past midnight and the window you open can still be live at the next morning's anchor, which then lands inside it and shifts your day. 24 is not divisible by 5, so no schedule loops cleanly across a day.
+- **Working hours stay within one day.** A range cannot cross midnight, and a very early one (say 2-6) anchors at 00:00 instead of the evening before.
 - **The headers are not a documented public API.** They are what the client already receives on every call, and they could change without notice.
 - **This does not create quota.** It moves window boundaries so fewer of them land mid-session. It does nothing for the weekly cap.
 - **Only the Linux path is verified in the wild.** The launchd and Task Scheduler backends are written to spec but untested — issues and reports welcome.

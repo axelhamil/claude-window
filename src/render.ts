@@ -1,5 +1,6 @@
 import type { Config } from "./config.js";
 import type { HistoryRecord } from "./history.js";
+import { describePlan, formatMinutes } from "./planner.js";
 import { clock, driftSeconds, gridTolerance, onGrid } from "./scheduling.js";
 import type { Snapshot } from "./state.js";
 
@@ -10,7 +11,8 @@ export interface ServiceView {
   status: string;
 }
 
-function describeDrift(drift: number, config: Config): string {
+function describeDrift(drift: number | null, config: Config): string {
+  if (drift === null) return "off schedule";
   if (Math.abs(drift) <= gridTolerance(config)) return "on grid";
   const minutes = Math.round(Math.abs(drift) / 60);
   return `drifted ${drift > 0 ? "+" : "-"}${minutes} min off grid`;
@@ -21,6 +23,22 @@ function dateClock(epochSeconds: number): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${month}-${day} ${clock(epochSeconds)}`;
+}
+
+export function scheduleLine(config: Config): string {
+  if (config.schedule === null) {
+    const plan = config.week.weekdays;
+    const hours =
+      plan === null
+        ? "none"
+        : `anchor ${formatMinutes(plan.anchorMinute)}, active until ${formatMinutes(plan.activeUntilMinute)}`;
+    return `schedule (environment) every day: ${hours}`;
+  }
+
+  return (
+    `schedule weekdays ${describePlan(config.schedule.weekdays)} | ` +
+    `weekend ${describePlan(config.schedule.weekend)}`
+  );
 }
 
 export function statusJson(
@@ -35,6 +53,7 @@ export function statusJson(
     window: snapshot,
     onGrid: snapshot === null ? null : onGrid(snapshot.resetAt, config),
     drift,
+    schedule: config.schedule,
   });
 }
 
@@ -43,7 +62,7 @@ export function statusLines(
   service: ServiceView,
   config: Config,
 ): string[] {
-  const lines = [`service (${service.name}): ${service.status}`];
+  const lines = [`service (${service.name}): ${service.status}`, scheduleLine(config)];
 
   if (snapshot === null) {
     lines.push("no probe recorded yet");

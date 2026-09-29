@@ -3,9 +3,11 @@ import type { Config } from "../src/config.js";
 import { anchor, type DaemonPorts, runDaemon } from "../src/daemon.js";
 import { ProbeError, type RateLimitWindow } from "../src/window.js";
 
+const everyDay = { anchorMinute: 7 * 60, activeUntilMinute: 23 * 60 };
+
 const config: Config = {
-  startHour: 7,
-  endHour: 23,
+  week: { weekdays: everyDay, weekend: everyDay },
+  schedule: null,
   offsetSeconds: 120,
   model: "claude-haiku-4-5-20251001",
   pingUrl: null,
@@ -111,10 +113,25 @@ describe("runDaemon", () => {
   it("never probes outside the active hours", async () => {
     const { signal } = abortAfter(1);
     const p = ports();
-    const nightConfig: Config = { ...config, startHour: 23, endHour: 24 };
+    const night = { anchorMinute: 23 * 60, activeUntilMinute: 24 * 60 };
+    const nightConfig: Config = { ...config, week: { weekdays: night, weekend: night } };
     await runDaemon("t", nightConfig, signal, p);
     expect(p.probe).not.toHaveBeenCalled();
     expect(p.messages[0]).toMatch(/^outside active hours/);
+  });
+
+  it("sleeps through a weekend without working hours", async () => {
+    const { signal } = abortAfter(1);
+    const workday = { anchorMinute: 5 * 60 + 30, activeUntilMinute: 17 * 60 };
+    const office: Config = { ...config, week: { weekdays: workday, weekend: null } };
+    const saturdayNoon = Math.floor(new Date(2026, 7, 15, 12, 0, 0, 0).getTime() / 1000);
+    const mondayAnchor = Math.floor(new Date(2026, 7, 17, 5, 30, 0, 0).getTime() / 1000);
+
+    const p = ports({ nowSeconds: () => saturdayNoon });
+    await runDaemon("t", office, signal, p);
+
+    expect(p.probe).not.toHaveBeenCalled();
+    expect(p.wait).toHaveBeenCalledWith(mondayAnchor - saturdayNoon, signal);
   });
 
   it("probes when the clock port reports an hour inside the active window, regardless of the real clock", async () => {

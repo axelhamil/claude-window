@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { logFile } from "../paths.js";
@@ -73,6 +73,13 @@ export function launchdManager(executable: string, args: string[]): ServiceManag
         process.stderr.write("warning: agent was not loaded\n");
       }
       rmSync(plistPath(), { force: true });
+    },
+
+    restart() {
+      if (!existsSync(plistPath())) return false;
+
+      launchctl("kickstart", "-k", `gui/${process.getuid?.() ?? ""}/${LABEL}`);
+      return true;
     },
 
     status() {

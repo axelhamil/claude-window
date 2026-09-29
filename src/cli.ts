@@ -4,16 +4,22 @@ import pkg from "../package.json" with { type: "json" };
 import { loadConfig, loadToken } from "./config.js";
 import { anchor, createPorts, runDaemon } from "./daemon.js";
 import { readRecords } from "./history.js";
-import { configDir, stateFile, tokenFile } from "./paths.js";
+import { configDir, scheduleFile, stateFile, tokenFile } from "./paths.js";
+import { describePlan, parseRange, planDay, type Range } from "./planner.js";
 import { historyLines, statusJson, statusLines } from "./render.js";
+import { type Schedule, saveSchedule, validateSchedule } from "./schedule.js";
 import { serviceManager } from "./service/manager.js";
 import { readSnapshot } from "./state.js";
+import { askSchedule } from "./wizard.js";
 
 const VERSION = pkg.version;
 
 const USAGE = `claude-window ${VERSION}
 
   claude-window login <token>   store a sk-ant-oat token
+  claude-window schedule        set your working hours, asks interactively
+  claude-window schedule --weekdays <range> --weekend <range|off>
+                                same without questions, e.g. --weekdays 9-17 --weekend off
   claude-window install         register the background service
   claude-window uninstall       remove it
   claude-window status [--json] last known window, costs nothing
@@ -57,6 +63,61 @@ function showStatus(args: string[]): void {
   if (snapshot === null) console.log(`(${stateFile()})`);
 }
 
+function flagValue(args: string[], flag: string): string | null {
+  const index = args.indexOf(flag);
+  if (index === -1) return null;
+
+  const value = args[index + 1];
+  if (value === undefined || value.startsWith("--")) throw new Error(`${flag} expects a value`);
+  return value;
+}
+
+function scheduleFromFlags(args: string[]): Schedule | null {
+  const weekdays = flagValue(args, "--weekdays");
+  const weekend = flagValue(args, "--weekend");
+  if (weekdays === null && weekend === null) return null;
+
+  return {
+    weekdays: parseRange(weekdays ?? "off"),
+    weekend: parseRange(weekend ?? "off"),
+  };
+}
+
+function warnIfClamped(label: string, range: Range | null): void {
+  if (range === null || !planDay(range).clamped) return;
+
+  process.stderr.write(
+    `warning: ${label} start too early to anchor before midnight, anchoring at 00:00 instead\n`,
+  );
+}
+
+async function setSchedule(args: string[]): Promise<void> {
+  const fromFlags = scheduleFromFlags(args);
+  if (fromFlags === null && !process.stdin.isTTY) {
+    throw new Error(
+      "no terminal to ask questions, pass the hours instead: " +
+        "claude-window schedule --weekdays 9-17 --weekend off",
+    );
+  }
+
+  const schedule = validateSchedule(fromFlags ?? (await askSchedule()));
+  saveSchedule(schedule);
+
+  console.log(`schedule saved to ${scheduleFile()}`);
+  console.log(`weekdays ${describePlan(schedule.weekdays)}`);
+  console.log(`weekend  ${describePlan(schedule.weekend)}`);
+  warnIfClamped("weekday", schedule.weekdays);
+  warnIfClamped("weekend", schedule.weekend);
+
+  const service = serviceManager();
+  const restarted = service.restart();
+  console.log(
+    restarted
+      ? `${service.name} service restarted with the new schedule`
+      : 'service not installed yet, run "claude-window install" to start anchoring',
+  );
+}
+
 function showHistory(args: string[]): void {
   const limitIndex = args.indexOf("--limit");
   const limit = limitIndex === -1 ? 20 : Number(args[limitIndex + 1]);
@@ -94,6 +155,10 @@ async function main(argv: string[]): Promise<number> {
       console.log(`removed from ${service.name}`);
       return 0;
     }
+
+    case "schedule":
+      await setSchedule(rest);
+      return 0;
 
     case "status":
       showStatus(rest);

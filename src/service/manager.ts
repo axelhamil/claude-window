@@ -9,6 +9,7 @@ export interface ServiceManager {
   install(): void;
   uninstall(): void;
   status(): string;
+  restart(): boolean;
 }
 
 function daemonCommand(): { executable: string; args: string[] } {
