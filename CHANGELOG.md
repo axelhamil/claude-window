@@ -1,3 +1,10 @@
+## [0.5.1](https://github.com/axelhamil/claude-window/compare/v0.5.0...v0.5.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* retry a 403 probe instead of stopping the daemon ([f876764](https://github.com/axelhamil/claude-window/commit/f8767644d0112b7041bb7c6a1281e515c2d55a6f))
+
 # [0.5.0](https://github.com/axelhamil/claude-window/compare/v0.4.5...v0.5.0) (2026-08-26)
 
 
