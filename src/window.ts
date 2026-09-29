@@ -22,7 +22,7 @@ export function windowStart(window: RateLimitWindow): number {
   return window.resetAt - WINDOW_SECONDS;
 }
 
-const FATAL_STATUSES = new Set([400, 401, 403, 404]);
+const FATAL_STATUSES = new Set([400, 401, 404]);
 
 export class ProbeError extends Error {
   readonly fatal: boolean;

@@ -94,11 +94,11 @@ describe("classifyStatus", () => {
     expect(classifyStatus(429)).toBe("success");
   });
 
-  it.each([400, 401, 403, 404])("treats %i as fatal", (status) => {
+  it.each([400, 401, 404])("treats %i as fatal", (status) => {
     expect(classifyStatus(status)).toBe("fatal");
   });
 
-  it.each([408, 425, 500, 502, 503, 504])("treats %i as transient", (status) => {
+  it.each([403, 408, 425, 500, 502, 503, 504])("treats %i as transient", (status) => {
     expect(classifyStatus(status)).toBe("transient");
   });
 });
