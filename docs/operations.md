@@ -63,7 +63,7 @@ claude-window install
 
 `npm update` replaces the binary but never touches the service definition, for example `~/.config/systemd/user/claude-window.service`. An installation from before 0.5.0 keeps the old unit, without `StartLimitIntervalSec` and `StartLimitBurst`, and restart-loops every 60 s forever on a fatal token error instead of giving up. Re-run `claude-window install` after upgrading to regenerate the unit; it is idempotent and safe to run again. It also records the current Node path, which fixes a unit pointing at a Node version you removed (NVM) and a Bun-based unit after a global install moved. Run it the same way as the first time (for the Bun setup: `bun "$(npm root -g)/claude-window/dist/cli.js" install`, see [Getting started](getting-started.md#running-under-bun-on-memory-tight-hosts)).
 
-The running daemon keeps the old code until restarted. `install` rewrites the unit and runs `systemctl --user enable --now`, which does not restart an already-running service; run `systemctl --user restart claude-window` to load the new version immediately.
+`install` also restarts a daemon that is already running, so the new code and the regenerated unit are in use as soon as the command returns.
 
 ## Troubleshooting
 

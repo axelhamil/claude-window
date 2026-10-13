@@ -15,6 +15,17 @@ function systemctl(...args: string[]): string {
   return execFileSync("systemctl", ["--user", ...args], { encoding: "utf8" }).trim();
 }
 
+function restartUnit(): void {
+  try {
+    systemctl("reset-failed", UNIT);
+  } catch (error) {
+    process.stderr.write(
+      `warning: could not clear the failed state, ${(error as Error).message}\n`,
+    );
+  }
+  systemctl("restart", UNIT);
+}
+
 export function systemdManager(executable: string, args: string[]): ServiceManager {
   return {
     name: "systemd",
@@ -54,7 +65,8 @@ export function systemdManager(executable: string, args: string[]): ServiceManag
       }
 
       systemctl("daemon-reload");
-      systemctl("enable", "--now", UNIT);
+      systemctl("enable", UNIT);
+      restartUnit();
     },
 
     uninstall() {
@@ -70,14 +82,7 @@ export function systemdManager(executable: string, args: string[]): ServiceManag
     restart() {
       if (!existsSync(unitPath())) return false;
 
-      try {
-        systemctl("reset-failed", UNIT);
-      } catch (error) {
-        process.stderr.write(
-          `warning: could not clear the failed state, ${(error as Error).message}\n`,
-        );
-      }
-      systemctl("restart", UNIT);
+      restartUnit();
       return true;
     },
 

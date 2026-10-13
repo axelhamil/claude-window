@@ -145,7 +145,7 @@ $ claude-window install
 registered with systemd, status: active
 ```
 
-The command line stored in the service is the current `process.execPath` followed by the resolved path of the running script and `daemon`. Run it from the installed command, not from a throwaway location. It is idempotent: it overwrites the service definition and enables and starts it. On systemd an already running daemon is not restarted; run `systemctl --user restart claude-window` to load new code or a new unit. Re-run it after upgrading ([Operations](operations.md#upgrading)).
+The command line stored in the service is the current `process.execPath` followed by the resolved path of the running script and `daemon`. Run it from the installed command, not from a throwaway location. It is idempotent: it overwrites the service definition, enables it, and starts the daemon or restarts the one already running, so new code or a new unit is loaded right away. Re-run it after upgrading ([Operations](operations.md#upgrading)).
 
 ## uninstall
 

@@ -74,3 +74,21 @@ describe("schtasksManager.restart", () => {
     expect(calls().map((call) => call[1])).toEqual(["/query", "/end", "/run"]);
   });
 });
+
+describe("schtasksManager.install", () => {
+  it("ends a task that is already running before starting it, so the new command is used", () => {
+    schtasksManager("node.exe", args).install();
+    expect(calls().map((call) => call[1])).toEqual(["/create", "/end", "/run"]);
+  });
+
+  it("still starts the task when none was running", () => {
+    vi.mocked(execFileSync)
+      .mockImplementationOnce(() => "")
+      .mockImplementationOnce(() => {
+        throw new Error("not running");
+      });
+
+    schtasksManager("node.exe", args).install();
+    expect(calls().map((call) => call[1])).toEqual(["/create", "/end", "/run"]);
+  });
+});

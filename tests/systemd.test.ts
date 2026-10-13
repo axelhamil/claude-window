@@ -44,6 +44,22 @@ describe("systemdManager.install", () => {
   it("still restarts on ordinary failures", () => {
     expect(install()).toContain("Restart=always");
   });
+
+  it("restarts a daemon that is already running, so it picks up the new unit", () => {
+    vi.mocked(execFileSync).mockClear();
+
+    install();
+    const calls = vi
+      .mocked(execFileSync)
+      .mock.calls.filter(([command]) => command === "systemctl")
+      .map(([, args]) => args);
+    expect(calls).toEqual([
+      ["--user", "daemon-reload"],
+      ["--user", "enable", "claude-window.service"],
+      ["--user", "reset-failed", "claude-window.service"],
+      ["--user", "restart", "claude-window.service"],
+    ]);
+  });
 });
 
 describe("systemdManager.status", () => {

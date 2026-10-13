@@ -59,6 +59,11 @@ export function schtasksManager(executable: string, args: string[]): ServiceMana
       try {
         writeFileSync(xml, taskXml(executable, args), "utf16le");
         schtasks("/create", "/tn", TASK, "/xml", xml, "/f");
+        try {
+          schtasks("/end", "/tn", TASK);
+        } catch {
+          // not running yet
+        }
         schtasks("/run", "/tn", TASK);
       } finally {
         rmSync(dir, { recursive: true, force: true });

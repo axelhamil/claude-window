@@ -189,7 +189,7 @@ Nice=10
 WantedBy=default.target
 ```
 
-`ExecStart` is the real `execPath` and script path, joined with spaces without quoting: a path containing spaces would not work. `install` then runs `loginctl enable-linger $USER` (on failure it warns `could not enable linger, the daemon stops when you log out` and continues), `systemctl --user daemon-reload` and `systemctl --user enable --now claude-window.service`. `uninstall` runs `disable --now` (warning `unit was not running` on failure), deletes the unit, and reloads.
+`ExecStart` is the real `execPath` and script path, joined with spaces without quoting: a path containing spaces would not work. `install` then runs `loginctl enable-linger $USER` (on failure it warns `could not enable linger, the daemon stops when you log out` and continues), `systemctl --user daemon-reload`, `systemctl --user enable claude-window.service`, then `reset-failed` and `restart`: a daemon that is already running is restarted with the new unit, and one that is not is started. `uninstall` runs `disable --now` (warning `unit was not running` on failure), deletes the unit, and reloads.
 
 `Restart=always` with `RestartSec=60` restarts the daemon after any exit, and the start limit stops it after three starts within an hour: a token that keeps failing fatally ends up with the unit in `failed` state instead of restarting forever. `status()` returns the output of `systemctl --user is-active`; when that exits non-zero it still uses the printed state (`failed`, `inactive`, `activating`), falling back to `inactive`.
 
@@ -199,7 +199,7 @@ Writes `~/Library/LaunchAgents/com.axelhamil.claude-window.plist` with label `co
 
 ### Task Scheduler (Windows)
 
-Creates task `claude-window` from a temporary UTF-16 XML file (deleted afterwards) with `schtasks /create /tn claude-window /xml <file> /f`, then starts it with `schtasks /run`. The XML defines: a logon trigger; `InteractiveToken` principal with `LeastPrivilege`; `MultipleInstancesPolicy` `IgnoreNew`; no battery restrictions; no execution time limit (`PT0S`); `Hidden`; `RestartOnFailure` every 5 minutes, up to 999 times; the action runs execPath with the quoted script path and `daemon`. `uninstall` runs `/end` (warning `task was not running`) then `/delete /f`. `status()` is `active` when `/query /fo list` reports `Status: Running`, `inactive` otherwise, and `not installed` when the query fails. The task does not redirect output, so the daemon's stderr lines are not persisted anywhere on Windows.
+Creates task `claude-window` from a temporary UTF-16 XML file (deleted afterwards) with `schtasks /create /tn claude-window /xml <file> /f`, ends a task that is already running (`schtasks /end`, errors ignored, because `IgnoreNew` would otherwise keep the old process), then starts it with `schtasks /run`. The XML defines: a logon trigger; `InteractiveToken` principal with `LeastPrivilege`; `MultipleInstancesPolicy` `IgnoreNew`; no battery restrictions; no execution time limit (`PT0S`); `Hidden`; `RestartOnFailure` every 5 minutes, up to 999 times; the action runs execPath with the quoted script path and `daemon`. `uninstall` runs `/end` (warning `task was not running`) then `/delete /f`. `status()` is `active` when `/query /fo list` reports `Status: Running`, `inactive` otherwise, and `not installed` when the query fails. The task does not redirect output, so the daemon's stderr lines are not persisted anywhere on Windows.
 
 ### restart() semantics
 
