@@ -1,3 +1,10 @@
+## [0.6.1](https://github.com/axelhamil/claude-window/compare/v0.6.0...v0.6.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* restart the running daemon on install ([671e672](https://github.com/axelhamil/claude-window/commit/671e672961a00c863f74a4d9c64b82960f17e252))
+
 # [0.6.0](https://github.com/axelhamil/claude-window/compare/v0.5.1...v0.6.0) (2026-09-29)
 
 
